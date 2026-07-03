@@ -222,7 +222,7 @@ def fetch_project_meta(owner_type, login, number):
 # Data processing
 # ---------------------------------------------------------------------------
 
-PRIORITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+PRIORITY_ORDER = {"Critical": 0, "Urgent": 1, "High": 2, "Medium": 3, "Low": 4}
 
 
 def _extract_field_value(fv):
@@ -383,12 +383,15 @@ def build_sections(items, closed_statuses, progress_statuses, next_statuses):
     No status name is hardcoded here — `closed_statuses`, `progress_statuses`, and
     `next_statuses` are sets of Status option names supplied by the caller (collected
     from the user by the skill, based on the project's actual Status field options).
+
+    All three sections sort by priority_key: highest priority first, then oldest
+    (earliest created_at) first as the secondary tiebreaker.
     """
     closed_week = sorted(
         [i for i in items if i.get("status") in closed_statuses and _recently_touched(i)],
-        key=lambda x: x.get("updated_at") or x.get("closed_at") or "", reverse=True,
+        key=priority_key,
     )
-    active     = [i for i in items if i.get("status") in progress_statuses]
+    active     = sorted([i for i in items if i.get("status") in progress_statuses], key=priority_key)
     next_tasks = sorted([i for i in items if i.get("status") in next_statuses], key=priority_key)
     return closed_week, active, next_tasks
 
@@ -638,6 +641,22 @@ def status_chip(status):
     return f'<span class="status-badge">{status}</span>'
 
 
+PRIORITY_COLORS = {
+    "Critical": "#E4022D",
+    "Urgent":   "#E4022D",
+    "High":     "#B84200",
+    "Medium":   "#5B6573",
+    "Low":      "#5B6573",
+}
+
+
+def priority_chip(priority):
+    if not priority:
+        return "—"
+    color = PRIORITY_COLORS.get(priority, "#5B6573")
+    return f'<span class="priority-badge" style="color:{color};border-color:{color}">{priority}</span>'
+
+
 def label_chip(name):
     bg, fg = label_color(name)
     return f'<span class="label-chip" style="background:{bg};color:{fg}">{name}</span>'
@@ -653,7 +672,7 @@ DATE_FIELD_LABELS = {
 
 def issue_rows(issues, project_url, show_status=True,
                date_field="created_at", date_field2=None, max_rows=10):
-    col_count = 2 + int(show_status) + 1 + int(date_field2 is not None)
+    col_count = 2 + 1 + int(show_status) + 1 + int(date_field2 is not None)
     if not issues:
         return f'<tr><td colspan="{col_count}" class="empty">None this period.</td></tr>'
 
@@ -663,6 +682,7 @@ def issue_rows(issues, project_url, show_status=True,
 
     for i in visible:
         labels    = "".join(label_chip(l) for l in i["labels"]) if i["labels"] else ""
+        priority_td = f"<td class='pr'>{priority_chip(i.get('priority'))}</td>"
         status_td = f"<td class='st'>{status_chip(i['status'])}</td>" if show_status else ""
         date1_val = fmt_date_dash(i.get(date_field))
         date1_td  = f"<td class='dt'>{date1_val}</td>"
@@ -674,6 +694,7 @@ def issue_rows(issues, project_url, show_status=True,
         <tr>
           <td class="num"><a href="{i['url']}">#{i['number']}</a></td>
           <td class="ttl">{i['title']}<div class="chips">{labels}</div></td>
+          {priority_td}
           {status_td}
           {date1_td}
           {date2_td}
@@ -705,12 +726,13 @@ def issue_table(issues, project_url, show_status=True,
     return f"""
     <table>
       <colgroup>
-        <col class="col-num"><col class="col-ttl">{status_col}{date1_col}{date2_col}
+        <col class="col-num"><col class="col-ttl"><col class="col-pr">{status_col}{date1_col}{date2_col}
       </colgroup>
       <thead>
         <tr>
           <th class="th-num">#</th>
           <th class="th-ttl">Task</th>
+          <th class="st">Priority</th>
           {status_th}
           {date1_th}
           {date2_th}
@@ -931,6 +953,7 @@ table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
 
 col.col-num {{ width: 60px; }}
 col.col-ttl {{ width: auto; }}
+col.col-pr  {{ width: 90px; }}
 col.col-st  {{ width: 120px; }}
 col.col-dt  {{ width: 84px; }}
 
@@ -959,6 +982,11 @@ tr.more-row a {{ color: var(--red); font-weight: 600; }}
   display: inline-block; font-size: 11px; font-weight: 600; color: var(--ink);
   background: var(--rule-2); border-radius: 2px; padding: 2px 8px; letter-spacing: 0.04em;
   white-space: nowrap;
+}}
+
+.priority-badge {{
+  display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  padding: 2px 8px; border: 1px solid; border-radius: 2px; white-space: nowrap;
 }}
 
 .label-chip {{

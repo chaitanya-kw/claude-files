@@ -115,9 +115,9 @@ python3 "$HOME/.claude/skills/weekly-status-report/scripts/generate_weekly_repor
 **PDF/HTML:**
 1. Overview — project name, description, and current status (with open/closed counts); the status body renders as formatted markdown (headers, bullet lists, bold/italic, code), not raw markdown syntax
 2. Open Questions & Client Actions — hidden if empty
-3. Closed This Week — issues whose Status is in the "Closed This Week" group, changed within the last 7 days
-4. In Progress & To Be Tested — issues whose Status is in the "In Progress" group
-5. Next 10 Tasks — issues whose Status is in the "Next Tasks" group, sorted by priority then oldest-first (first 10 shown, overflow link to GitHub)
+3. Closed This Week — issues whose Status is in the "Closed This Week" group, changed within the last 7 days; includes a Priority column, sorted by priority then oldest-first
+4. In Progress & To Be Tested — issues whose Status is in the "In Progress" group; includes a Priority column, sorted by priority then oldest-first
+5. Next 10 Tasks — issues whose Status is in the "Next Tasks" group; includes a Priority column, sorted by priority then oldest-first (first 10 shown, overflow link to GitHub)
 6. Notes — hidden if none provided
 
 **CSV** (no overview, no questions, no notes):
