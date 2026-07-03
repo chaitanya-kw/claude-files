@@ -615,7 +615,14 @@ PROJECT_STATUS_DISPLAY = {
 def project_status_chip(status):
     key = status.upper().replace(" ", "_")
     label, fg = PROJECT_STATUS_DISPLAY.get(key, (status, "#5B6573"))
-    return f'<span class="status-pill" style="color:{fg};border-color:{fg}">{label}</span>'
+    # Box shape (border/padding/display) is inlined, not left to the .status-pill
+    # class, so the pill still renders correctly if the <style> block is dropped
+    # entirely (e.g. Gmail strips it from sent mail).
+    style = (
+        "display:inline-block;font-size:11px;font-weight:600;letter-spacing:0.06em;"
+        f"text-transform:uppercase;padding:3px 10px;border:1px solid {fg};border-radius:2px;color:{fg};"
+    )
+    return f'<span class="status-pill" style="{style}">{label}</span>'
 
 LABEL_PALETTE = [
     ("#FCE5EA", "#8A021B"),
@@ -724,6 +731,7 @@ def issue_table(issues, project_url, show_status=True,
         date2_th  = f"<th class='th-dt'>{date2_label}</th>"
         date2_col = "<col class='col-dt'>"
     return f"""
+    <div class="table-scroll">
     <table>
       <colgroup>
         <col class="col-num"><col class="col-ttl"><col class="col-pr">{status_col}{date1_col}{date2_col}
@@ -741,7 +749,8 @@ def issue_table(issues, project_url, show_status=True,
       <tbody>
         {issue_rows(issues, project_url, show_status, date_field, date_field2, max_rows)}
       </tbody>
-    </table>"""
+    </table>
+    </div>"""
 
 
 # ---------------------------------------------------------------------------
@@ -792,22 +801,26 @@ def generate_html(all_items, proj_title, proj_desc, status_update, project_url,
 
     desc_html = f'<div class="proj-desc">{"".join(desc_parts)}</div>' if desc_parts else ""
 
+    # A <table>, not a div grid — with inline cell styles as a fallback for
+    # when the <style> block itself is stripped (e.g. Gmail on sent mail),
+    # so the three counts stay side-by-side instead of stacking.
+    def stat_cell(n, label, border_right):
+        border = "border-right:1px solid #E2DED6;" if border_right else ""
+        return f"""
+      <td class="stat-card" style="width:33.33%;vertical-align:top;background:#FFFFFF;padding:14px 16px;{border}">
+        <div class="s-n" style="font-family:Georgia,'Times New Roman',serif;font-style:italic;font-size:26px;color:#0B0F14;line-height:1;">{n}</div>
+        <div class="s-l" style="font-size:10px;color:#5B6573;text-transform:uppercase;letter-spacing:0.08em;margin-top:4px;">{label}</div>
+      </td>"""
+
     overview_content = f"""
     {desc_html}
-    <div class="three-col-stats">
-      <div class="stat-card">
-        <div class="s-n">{len(closed_week)}</div>
-        <div class="s-l">Closed this week</div>
-      </div>
-      <div class="stat-card">
-        <div class="s-n">{len(active)}</div>
-        <div class="s-l">In progress</div>
-      </div>
-      <div class="stat-card">
-        <div class="s-n">{len(next_tasks)}</div>
-        <div class="s-l">Next tasks</div>
-      </div>
-    </div>"""
+    <table class="three-col-stats" role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #E2DED6;">
+      <tr>
+        {stat_cell(len(closed_week), "Closed this week", True)}
+        {stat_cell(len(active), "In progress", True)}
+        {stat_cell(len(next_tasks), "Next tasks", False)}
+      </tr>
+    </table>"""
 
     questions_content = None
     if extra_questions:
@@ -922,10 +935,10 @@ a:hover {{ text-decoration: underline; }}
 .section-header {{ margin-bottom: 20px; }}
 .section-body {{ font-size: 13px; line-height: 1.6; color: var(--ink); }}
 
-.proj-desc {{
-  display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
-  margin-bottom: 20px;
-}}
+/* Plain block flow, not flexbox — this survives having its <style> block
+   stripped (e.g. Gmail strips <style> from sent mail), whereas flex/grid
+   silently collapse to something worse than a simple top-to-bottom stack. */
+.proj-desc {{ margin-bottom: 20px; }}
 
 .status-pill {{
   display: inline-block;
@@ -944,12 +957,22 @@ a:hover {{ text-decoration: underline; }}
   padding: 1px 4px; border-radius: 2px;
 }}
 
-.three-col-stats {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }}
-.stat-card {{ background: var(--card); padding: 14px 16px; }}
+/* A <table>, not CSS grid — grid collapses (stats stack vertically instead
+   of three across) once Gmail strips the <style> block from sent mail. */
+.three-col-stats {{ width: 100%; border-collapse: collapse; border: 1px solid var(--rule); }}
+.stat-card {{ background: var(--card); padding: 14px 16px; width: 33.33%; vertical-align: top; border-right: 1px solid var(--rule); }}
+.stat-card:last-child {{ border-right: none; }}
 .stat-card .s-n {{ font-family: var(--serif); font-style: italic; font-size: 26px; color: var(--ink); line-height: 1; }}
 .stat-card .s-l {{ font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }}
 
-table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+.table-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
+
+/* min-width matches the widest issue table (5 columns, incl. Status) so every
+   table shares one floor — narrower ones (e.g. Closed This Week, no Status
+   column) just get a roomier title column instead of a different breakpoint.
+   Below that width the .table-scroll wrapper scrolls instead of the table
+   squishing its columns unreadably thin. */
+table {{ width: 100%; min-width: 640px; border-collapse: collapse; table-layout: fixed; }}
 
 col.col-num {{ width: 60px; }}
 col.col-ttl {{ width: auto; }}
