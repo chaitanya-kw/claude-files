@@ -1015,7 +1015,7 @@ tr.more-row a {{ color: var(--red); font-weight: 600; }}
   tr {{ break-inside: avoid; }}
   .section-block {{ page-break-inside: avoid; }}
   .wrap {{ padding: 0; }}
-  .card {{ padding: 0; max-width: none; }}
+  .card {{ padding: 0; }}
 }}
 </style>
 </head>
