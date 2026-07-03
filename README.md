@@ -18,6 +18,7 @@ Each file or tool has its own README.
 | `repo-telemetry-setup` | `claude/skills/repo-telemetry-setup/` | Configure per-repo telemetry for the Claude Code monitoring stack |
 | `token-usage-review` | `claude/skills/token-usage-review/` | Analyse Claude Code token usage from session files |
 | `weekly-status-report` | `claude/skills/weekly-status-report/` | Generate a weekly status report for any GitHub Project V2 |
+| `snm-tnm-monthly-report-generator` | `claude/skills/snm-tnm-monthly-report-generator/` | Generate a branded Kilowott monthly S&M/T&M client report as a self-contained HTML file |
 | `project-instructions-creator` | `claude/skills/project-instructions-creator/` | Create Claude Project instructions for a new engagement |
 
 ---
