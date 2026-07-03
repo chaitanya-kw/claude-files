@@ -1,0 +1,11 @@
+{
+  "terminal.integrated.env.windows": {
+    "OTEL_RESOURCE_ATTRIBUTES": "project=chaitanya-kw-claude-files"
+  },
+  "terminal.integrated.env.linux": {
+    "OTEL_RESOURCE_ATTRIBUTES": "project=chaitanya-kw-claude-files"
+  },
+  "terminal.integrated.env.osx": {
+    "OTEL_RESOURCE_ATTRIBUTES": "project=chaitanya-kw-claude-files"
+  }
+}

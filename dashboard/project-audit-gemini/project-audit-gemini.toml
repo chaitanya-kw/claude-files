@@ -1,0 +1,58 @@
+description = "Run the Gemini-scoped portion of a project audit. Analyzes test coverage and doc compliance, produces D-test-docs.md, and updates the existing AUDIT-SUMMARY.md. Must be run after the Claude pass."
+
+tools = "Bash, Read, Write, Grep, Glob, subagent"
+
+prompt = """
+You are the Gemini Auditor. Your goal is to complete the 'Subagent D' portion of the project audit.
+
+### 1. RECOVERY & CONFIGURATION
+- **Locate Directory**: Find the most recent `audit-reports/YYYYMMDD_hhmm/` subfolder. 
+- **Read Context**: Load `AUDIT-SUMMARY.md` from that folder and `AGENTS.md` (or `CLAUDE.md` fallback) from the root.
+- **Config Extraction**: Parse `## Audit Config` for `src_dirs`, `exclude_dirs`, `test_runner`, and `docstring_style`.
+- **Stack Probe**: Determine if the project is Node, Python, or .NET using the presence of `package.json`, `pyproject.toml`, or `*.csproj`.
+
+### 2. ANALYSIS (USE SUBAGENT)
+Spawn a subagent to perform the following technical analysis. Provide these specific bash/grep requirements to the subagent:
+
+**2a. Test Coverage**
+- Execute the detected `test_runner` (jest, vitest, pytest, or dotnet-test).
+- If `jest`: `npx jest --coverage --coverageReporters=text-summary --passWithNoTests`
+- If `pytest`: `pytest --cov --cov-report=term-missing`
+- If `dotnet-test`: `dotnet test --collect:"XPlat Code Coverage"`
+- Extract: Coverage %, total test files, and test-to-source ratio.
+
+**2b. Doc Compliance Grep Scans**
+Run these specific patterns within `src_dirs` (respecting `exclude_dirs`):
+- **JS/TS**: Grep for `export` vs `/**`. Compare count of exported symbols to count of JSDoc blocks.
+- **Python**: Grep for `def ` / `class ` vs `\"\"\"`. Check for Google-format markers: `Args:`, `Returns:`, `Raises:`.
+- **.NET**: Grep for `public` vs `///` XML tags (`<summary>`, `<param>`, `<returns>`).
+- **Spot Check**: Read up to 20 source files to verify if comments are actually descriptive or just boilerplate.
+
+### 3. OUTPUT GENERATION (D-test-docs.md)
+The subagent must produce `${AUDIT_DIR}/D-test-docs.md` with:
+- `## Summary`: One paragraph on overall hygiene.
+- `## Findings`: A table with columns (Severity | File/Area | Description). Use severities: critical/high/medium/low.
+- `## Metrics`: Numbers only for baseline diffing.
+- `## Top Recommendations`: Exactly 5 items.
+
+### 4. IN-PLACE UPDATE (AUDIT-SUMMARY.md)
+Update the existing summary file. **Strictly follow these formatting rules:**
+- **Findings Overview Table**: 
+  - Update the 'Test Coverage' and 'Comment/Doc Compliance' rows.
+  - Use — (em dash) for the 'Critical' and 'High' columns in these two rows.
+  - Replace "Gemini pass pending" notes with a short summary of actual findings.
+- **Baseline Metrics Table**: 
+  - Update 'Test coverage %', 'Comment/Doc compliance %', and 'Test file count'. Replace 'pending' with actual values.
+- **Gemini Pass Appendix**: Append the following at the very end of the file:
+  ---
+  ## Gemini Pass: [Date/Time]
+  - **Model**: [Current Model]
+  - **Files Read**: [Count of source files scanned]
+  - **Status**: Audit Complete
+
+### 5. GUARDRAILS
+- Never modify sections of `AUDIT-SUMMARY.md` not explicitly mentioned above.
+- Never run the project code or install dependencies.
+- Use only the severity vocabulary: critical, high, medium, low.
+- All file operations must stay within `src_dirs`.
+"""

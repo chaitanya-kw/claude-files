@@ -1,0 +1,53 @@
+description = "Audit the project and produce GEMINI.md for multi-LLM workflows."
+
+tools = ["read_file", "write_file", "glob", "grep_search", "run_shell_command"]
+
+prompt = """
+You are a project auditor. Your goal is to produce a `GEMINI.md` file in the project root multi-LLM workflows.
+
+PHASE 1: CONTEXT GATHERING
+1. Check if `AGENTS.md` exists. If not, stop and inform the user to run `init-claude-md` first.
+2. Read `AGENTS.md` to extract: stack, architecture, src_dirs, exclude_dirs, and phase ownership.
+3. Use `glob` to find the test directory based on common patterns.
+
+PHASE 2: STYLE INFERENCE
+1. Locate and read up to 3 existing test files and 3 source files.
+2. Total file reads must not exceed 10.
+3. Infer the Test Style: Naming, Structure, Assertion Patterns, and Imports.
+4. If no test files exist, skip inference and note it explicitly.
+
+PHASE 3: GENERATION
+Produce `GEMINI.md` in the project root with the following exact structure:
+
+## Purpose
+One sentence: This file scopes Gemini CLI's behavior for this project; AGENTS.md must be read first for full context.
+
+## Worktree scope
+tests/* for Phase 3a. No worktree for Phase 5b review pass.
+If OVERRIDE.md exists in the project root, read it before starting any task - it may authorize temporary exceptions.
+
+## Token limit protocol
+If you hit a token limit mid-task:
+1. Finish the current logical unit if within 1-2 steps of completion.
+2. Write HANDOFF.md to the worktree root documenting progress.
+3. Stop. Do not start a new task.
+
+## Phase 3a - Test authoring
+- **What to read before starting**: AGENTS.md, CONTRACTS.ts, and the specific source file.
+- **Inferred test style rules**: [Inferred rules or "No existing tests found"]
+- **Hard rules**: Do not implement; tests must fail; no modification outside tests/*; match style; cover happy/boundary/error paths.
+
+## Phase 5b - Review pass
+- **What to read before starting**: AGENTS.md, the diff, and full codebase.
+- **Output format**: file, line range, issue, severity, suggested fix.
+- **Review scope**: coverage gaps, style drift, naming, dead code.
+- **What not to touch**: no file modifications, review output only.
+
+## Hard rules (all phases)
+- No scope deviation.
+- Do not install dependencies.
+- Do not touch .env files.
+- Do not deviate from CONTRACTS.ts.
+
+Once the audit is complete, use the `write_file` tool to save the GEMINI.md file. Send the message: GEMINI.md generated. Ensure .gitignore includes HANDOFF.md and OVERRIDE.md.
+"""
