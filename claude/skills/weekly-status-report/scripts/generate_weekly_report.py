@@ -39,6 +39,7 @@ query($cursor: String) {{
       items(first: 100, after: $cursor) {{
         pageInfo {{ hasNextPage endCursor }}
         nodes {{
+          updatedAt
           content {{
             ... on Issue {{
               number
@@ -51,6 +52,32 @@ query($cursor: String) {{
               assignees(first: 10) {{ nodes {{ login name }} }}
               labels(first: 20) {{ nodes {{ name }} }}
               milestone {{ title dueOn }}
+              issueFieldValues(first: 30) {{
+                nodes {{
+                  __typename
+                  ... on IssueFieldSingleSelectValue {{
+                    value
+                    field {{ ... on IssueFieldSingleSelect {{ name }} }}
+                  }}
+                  ... on IssueFieldDateValue {{
+                    value
+                    field {{ ... on IssueFieldDate {{ name }} }}
+                  }}
+                  ... on IssueFieldTextValue {{
+                    value
+                    field {{ ... on IssueFieldText {{ name }} }}
+                  }}
+                  ... on IssueFieldNumberValue {{
+                    value
+                    field {{ ... on IssueFieldNumber {{ name }} }}
+                  }}
+                  ... on IssueFieldMultiSelectValue {{
+                    value
+                    options {{ ... on IssueFieldSingleSelectOption {{ name }} }}
+                    field {{ ... on IssueFieldMultiSelect {{ name }} }}
+                  }}
+                }}
+              }}
             }}
           }}
           fieldValues(first: 30) {{
@@ -107,6 +134,23 @@ query($cursor: String) {{
 """
 
 
+def build_status_field_query(owner_type, login, number):
+    entity = 'organization' if owner_type == 'orgs' else 'user'
+    return f"""
+{{
+  {entity}(login: "{login}") {{
+    projectV2(number: {number}) {{
+      field(name: "Status") {{
+        ... on ProjectV2SingleSelectField {{
+          options {{ name }}
+        }}
+      }}
+    }}
+  }}
+}}
+"""
+
+
 def build_meta_query(owner_type, login, number):
     entity = 'organization' if owner_type == 'orgs' else 'user'
     return f"""
@@ -151,6 +195,15 @@ def fetch_all_items(owner_type, login, number):
     return items
 
 
+def fetch_status_options(owner_type, login, number):
+    """Return the ordered list of option names for the project's 'Status' field."""
+    query = build_status_field_query(owner_type, login, number)
+    entity = 'organization' if owner_type == 'orgs' else 'user'
+    data = gh_graphql(query)
+    field = data["data"][entity]["projectV2"].get("field") or {}
+    return [o["name"] for o in field.get("options", [])]
+
+
 def fetch_project_meta(owner_type, login, number):
     query = build_meta_query(owner_type, login, number)
     entity = 'organization' if owner_type == 'orgs' else 'user'
@@ -170,7 +223,6 @@ def fetch_project_meta(owner_type, login, number):
 # ---------------------------------------------------------------------------
 
 PRIORITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
-STATUS_ORDER   = {"In progress": 0, "To be Tested": 1, "Ready": 2, "Backlog": 3, "Done": 4}
 
 
 def _extract_field_value(fv):
@@ -207,16 +259,46 @@ def _extract_field_value(fv):
     return fname, None
 
 
+def _extract_issue_field_value(fv):
+    """Return (field_name, value_str) from an issue-level custom field node (IssueFieldValue union)."""
+    if not fv:
+        return None, None
+    fname = (fv.get("field") or {}).get("name", "")
+    if not fname:
+        return None, None
+    value = fv.get("value")
+    if value is not None:
+        return fname, str(value)
+    options = fv.get("options")
+    if options is not None:
+        names = [o.get("name", "") for o in options if o]
+        return fname, ", ".join(n for n in names if n)
+    return fname, None
+
+
 def parse_item(raw):
     content = raw.get("content") or {}
     if "number" not in content:
         return None
 
-    all_fields = {}
+    # Project-level fields (from the ProjectV2Item), e.g. Status, Size, Assignees.
+    project_fields = {}
     for fv in raw.get("fieldValues", {}).get("nodes", []):
         fname, value = _extract_field_value(fv)
         if fname and value is not None:
-            all_fields[fname] = value
+            project_fields[fname] = value
+
+    # Issue-level custom fields (from the Issue itself), e.g. Priority, Start date,
+    # Target date, Effort. These live outside ProjectV2 entirely, so they must be
+    # fetched and merged separately. Where a name exists at both levels, the
+    # issue-level value wins since it's the one users actually set in practice.
+    issue_fields = {}
+    for fv in content.get("issueFieldValues", {}).get("nodes", []):
+        fname, value = _extract_issue_field_value(fv)
+        if fname and value is not None:
+            issue_fields[fname] = value
+
+    all_fields = {**project_fields, **issue_fields}
 
     status     = all_fields.get("Status")
     priority   = all_fields.get("Priority")
@@ -241,6 +323,7 @@ def parse_item(raw):
         "type":        item_type,
         "created_at":  content["createdAt"],
         "closed_at":   content.get("closedAt"),
+        "updated_at":  raw.get("updatedAt"),
         "url":         content["url"],
         "repo":        content.get("repository", {}).get("name", ""),
         "labels":      [l["name"] for l in content.get("labels", {}).get("nodes", [])],
@@ -250,17 +333,23 @@ def parse_item(raw):
     }
 
 
-def closed_this_week(item):
-    if not item.get("closed_at"):
+def _recently_touched(item, days=7):
+    """True if the item's status was set/changed within the last `days` days.
+
+    Uses the project item's updatedAt as a proxy for "when the status last
+    changed" (falling back to closedAt), since GitHub doesn't expose a
+    per-field-change timestamp for Status.
+    """
+    ts = item.get("updated_at") or item.get("closed_at")
+    if not ts:
         return False
-    closed = datetime.fromisoformat(item["closed_at"].replace("Z", "+00:00"))
-    return (datetime.now(timezone.utc) - closed).days < 7
+    changed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    return (datetime.now(timezone.utc) - changed).days < days
 
 
 def priority_key(item):
     return (
         PRIORITY_ORDER.get(item.get("priority"), 9),
-        STATUS_ORDER.get(item.get("status"), 9),
         item.get("created_at", ""),
     )
 
@@ -288,14 +377,114 @@ def majority_has_field(issues, field):
     return count > len(issues) / 2
 
 
-def build_sections(items):
-    closed_week  = sorted([i for i in items if closed_this_week(i)],
-                          key=lambda x: x["closed_at"] or "", reverse=True)
-    in_progress  = [i for i in items if i["status"] == "In progress"]
-    to_be_tested = [i for i in items if i["status"] == "To be Tested"]
-    active       = in_progress + to_be_tested
-    next_tasks   = sorted([i for i in items if i["status"] == "Ready"], key=priority_key)
+def build_sections(items, closed_statuses, progress_statuses, next_statuses):
+    """Split items into the three report sections using user-configured status groups.
+
+    No status name is hardcoded here — `closed_statuses`, `progress_statuses`, and
+    `next_statuses` are sets of Status option names supplied by the caller (collected
+    from the user by the skill, based on the project's actual Status field options).
+    """
+    closed_week = sorted(
+        [i for i in items if i.get("status") in closed_statuses and _recently_touched(i)],
+        key=lambda x: x.get("updated_at") or x.get("closed_at") or "", reverse=True,
+    )
+    active     = [i for i in items if i.get("status") in progress_statuses]
+    next_tasks = sorted([i for i in items if i.get("status") in next_statuses], key=priority_key)
     return closed_week, active, next_tasks
+
+
+# ---------------------------------------------------------------------------
+# Markdown helpers (GitHub status update bodies are markdown)
+# ---------------------------------------------------------------------------
+
+def _inline_markdown_to_html(text):
+    text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', text)
+    text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+    return text
+
+
+def markdown_to_html(text):
+    """Render a small, common subset of markdown (headers, bullet/numbered lists,
+    bold/italic/code, paragraphs) to HTML. Status update bodies come from GitHub
+    as markdown, so this is needed for them to display as more than raw text."""
+    if not text:
+        return ""
+
+    lines = text.replace("\r\n", "\n").split("\n")
+    html_parts = []
+    list_buffer = []
+    list_tag = None
+
+    def flush_list():
+        nonlocal list_buffer, list_tag
+        if list_buffer:
+            items = "".join(f"<li>{item}</li>" for item in list_buffer)
+            html_parts.append(f"<{list_tag}>{items}</{list_tag}>")
+            list_buffer = []
+            list_tag = None
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            flush_list()
+            continue
+
+        header_match = re.match(r'^(#{1,6})\s+(.*)$', line)
+        bullet_match = re.match(r'^[-*]\s+(.*)$', line)
+        numbered_match = re.match(r'^\d+\.\s+(.*)$', line)
+
+        if header_match:
+            flush_list()
+            level = len(header_match.group(1))
+            html_parts.append(f"<h{level}>{_inline_markdown_to_html(header_match.group(2))}</h{level}>")
+        elif bullet_match:
+            if list_tag != "ul":
+                flush_list()
+                list_tag = "ul"
+            list_buffer.append(_inline_markdown_to_html(bullet_match.group(1)))
+        elif numbered_match:
+            if list_tag != "ol":
+                flush_list()
+                list_tag = "ol"
+            list_buffer.append(_inline_markdown_to_html(numbered_match.group(1)))
+        else:
+            flush_list()
+            html_parts.append(f"<p>{_inline_markdown_to_html(line)}</p>")
+
+    flush_list()
+    return "\n".join(html_parts)
+
+
+def strip_markdown(text):
+    """Return plain text with common markdown syntax removed (for CSV export)."""
+    if not text:
+        return ""
+    lines = text.replace("\r\n", "\n").split("\n")
+    out = []
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        line = re.sub(r'^#{1,6}\s+', '', line)
+        line = re.sub(r'^[-*]\s+', '', line)
+        line = re.sub(r'^\d+\.\s+', '', line)
+        line = re.sub(r'\*\*(.+?)\*\*', r'\1', line)
+        line = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\1', line)
+        line = re.sub(r'`(.+?)`', r'\1', line)
+        out.append(line)
+    return " ".join(out)
+
+
+def status_label_display(status):
+    """Convert a status code like 'ON_TRACK' to a display label like 'On Track'."""
+    if not status:
+        return ""
+    key = status.upper().replace(" ", "_")
+    display = PROJECT_STATUS_DISPLAY.get(key)
+    if display:
+        return display[0]
+    return status.replace("_", " ").title()
 
 
 # ---------------------------------------------------------------------------
@@ -378,31 +567,52 @@ def export_csv(closed_week, active, next_tasks, output_dir, date_str):
     return paths
 
 
+def export_status_csv(status_update, output_dir, date_str):
+    """Write a single-row status.csv: Status, Summary, Date. Header-only if no
+    status update exists on GitHub."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"weekly-{date_str}-status.csv"
+
+    headers = ["Status", "Summary", "Date"]
+    row = None
+    if status_update:
+        row = {
+            "Status":  status_label_display(status_update.get("status", "")),
+            "Summary": strip_markdown(status_update.get("body", "")),
+            "Date":    fmt_date(status_update.get("createdAt")),
+        }
+
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=headers, quoting=csv.QUOTE_NONNUMERIC)
+        writer.writeheader()
+        if row:
+            writer.writerow(row)
+
+    print(f"  → {path} ({1 if row else 0} rows)", flush=True)
+    return path
+
+
 # ---------------------------------------------------------------------------
 # HTML helpers
 # ---------------------------------------------------------------------------
 
-STATUS_COLORS = {
-    "In progress":  ("#E4022D", "#FCE5EA"),
-    "To be Tested": ("#1F3CFF", "#E8EBFF"),
-    "Done":         ("#0B7B3E", "#E6F4ED"),
-    "Ready":        ("#5B6573", "#F0EFED"),
-    "Backlog":      ("#5B6573", "#F0EFED"),
-}
-
+# Statuses are user-configured, not hardcoded — GitHub's project status enum
+# (ON_TRACK/AT_RISK/...) is the one fixed vocabulary worth color-coding, since it
+# always means the same thing regardless of the project.
 PROJECT_STATUS_DISPLAY = {
-    "ON_TRACK":  ("On Track",  "#0B7B3E", "#E6F4ED"),
-    "AT_RISK":   ("At Risk",   "#B84200", "#FEF0E7"),
-    "OFF_TRACK": ("Off Track", "#E4022D", "#FCE5EA"),
-    "COMPLETE":  ("Complete",  "#0B7B3E", "#E6F4ED"),
-    "INACTIVE":  ("Inactive",  "#5B6573", "#F0EFED"),
+    "ON_TRACK":  ("On Track",  "#0B0F14"),
+    "AT_RISK":   ("At Risk",   "#E4022D"),
+    "OFF_TRACK": ("Off Track", "#E4022D"),
+    "COMPLETE":  ("Complete",  "#0B0F14"),
+    "INACTIVE":  ("Inactive",  "#5B6573"),
 }
 
 
 def project_status_chip(status):
     key = status.upper().replace(" ", "_")
-    label, fg, bg = PROJECT_STATUS_DISPLAY.get(key, (status, "#5B6573", "#F0EFED"))
-    return f'<span class="chip" style="color:{fg};background:{bg}">{label}</span>'
+    label, fg = PROJECT_STATUS_DISPLAY.get(key, (status, "#5B6573"))
+    return f'<span class="status-pill" style="color:{fg};border-color:{fg}">{label}</span>'
 
 LABEL_PALETTE = [
     ("#FCE5EA", "#8A021B"),
@@ -425,8 +635,7 @@ def label_color(name):
 def status_chip(status):
     if not status:
         return "—"
-    fg, bg = STATUS_COLORS.get(status, ("#5B6573", "#F0EFED"))
-    return f'<span class="chip" style="color:{fg};background:{bg}">{status}</span>'
+    return f'<span class="status-badge">{status}</span>'
 
 
 def label_chip(name):
@@ -518,6 +727,7 @@ def issue_table(issues, project_url, show_status=True,
 # ---------------------------------------------------------------------------
 
 def generate_html(all_items, proj_title, proj_desc, status_update, project_url,
+                  closed_statuses, progress_statuses, next_statuses,
                   manual_status_label=None, manual_status_body=None,
                   extra_questions=None, notes=None):
 
@@ -531,7 +741,7 @@ def generate_html(all_items, proj_title, proj_desc, status_update, project_url,
 
     items = [p for p in (parse_item(r) for r in all_items) if p]
 
-    closed_week, active, next_tasks = build_sections(items)
+    closed_week, active, next_tasks = build_sections(items, closed_statuses, progress_statuses, next_statuses)
     next_10 = next_tasks[:10]
 
     # ── Date column decisions ──────────────────────────────────────────────
@@ -551,20 +761,17 @@ def generate_html(all_items, proj_title, proj_desc, status_update, project_url,
         if su_status:
             desc_parts.append(project_status_chip(su_status))
         if su_body:
-            desc_parts.append(f'<p class="su-body">{su_body.replace(chr(10), "<br>")}</p>')
+            desc_parts.append(f'<div class="su-body">{markdown_to_html(su_body)}</div>')
     elif manual_status_label or manual_status_body:
         if manual_status_label:
             desc_parts.append(project_status_chip(manual_status_label))
         if manual_status_body:
-            desc_parts.append(f'<p class="su-body">{manual_status_body.replace(chr(10), "<br>")}</p>')
+            desc_parts.append(f'<div class="su-body">{markdown_to_html(manual_status_body)}</div>')
 
     desc_html = f'<div class="proj-desc">{"".join(desc_parts)}</div>' if desc_parts else ""
 
-    overview_html = f"""
-    <div class="overview-block">
-      <div class="proj-name">{proj_title}</div>
-      {desc_html}
-    </div>
+    overview_content = f"""
+    {desc_html}
     <div class="three-col-stats">
       <div class="stat-card">
         <div class="s-n">{len(closed_week)}</div>
@@ -580,352 +787,235 @@ def generate_html(all_items, proj_title, proj_desc, status_update, project_url,
       </div>
     </div>"""
 
+    questions_content = None
     if extra_questions:
         lines    = [l.strip() for l in extra_questions.strip().splitlines() if l.strip()]
         items_li = "".join(f"<li>{l}</li>" for l in lines)
-        questions_section = f"""
-        <div class="section-block">
-          <div class="section-header">
-            <h2 class="section-title">Open Questions &amp; Client Actions</h2>
-          </div>
-          <div class="section">
-            <div class="extra-block">
-              <ul class="extra-list">{items_li}</ul>
-            </div>
-          </div>
-        </div>"""
-    else:
-        questions_section = ""
+        questions_content = f'<ul class="extra-list">{items_li}</ul>'
 
+    notes_content = None
     if notes and notes.strip():
-        notes_section = f"""
-        <div class="section-block">
-          <div class="section-header">
-            <h2 class="section-title">Notes</h2>
-          </div>
-          <div class="notes-area">{notes.strip().replace(chr(10), "<br>")}</div>
-        </div>"""
-    else:
-        notes_section = ""
+        notes_content = f'<div class="notes-area">{notes.strip().replace(chr(10), "<br>")}</div>'
+
+    closed_table = issue_table(closed_week, project_url, show_status=False,
+                                date_field=closed_date1, date_field2=closed_date2)
+    active_table = issue_table(active, project_url, date_field=active_date1)
+    next_table   = issue_table(next_10, project_url, date_field=next_date1)
+
+    # ── Numbered sections, in order; empty/optional ones are skipped ───────
+    sections = [
+        ("Status", overview_content),
+        ("Open Questions & Client Actions", questions_content),
+        ("Closed This Week", closed_table),
+        ("In Progress & To Be Tested", active_table),
+        ("Next 10 Tasks", next_table),
+        ("Notes", notes_content),
+    ]
+
+    section_html = ""
+    n = 0
+    for title, content in sections:
+        if not content:
+            continue
+        n += 1
+        section_html += f"""
+    <div class="section-block">
+      <div class="section-header">
+        <p class="sec-label">{n:02d}&nbsp;&nbsp;{title.upper()}</p>
+      </div>
+      <div class="section-body">
+        {content}
+      </div>
+    </div>"""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>{proj_title} Weekly Status — {today_str}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{proj_title} — Weekly Status — {today_str}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
-@page {{
-  size: A4;
-  margin: 16mm 22mm 16mm 22mm;
+:root {{
+  --ink:     #0B0F14;
+  --muted:   #5B6573;
+  --red:     #E4022D;
+  --paper:   #F0EDE8;
+  --card:    #FFFFFF;
+  --rule:    #E2DED6;
+  --rule-2:  #F0EDE8;
+  --sans:    'DM Sans', Arial, sans-serif;
+  --mono:    'Courier New', Courier, monospace;
+  --serif:   Georgia, 'Times New Roman', serif;
 }}
 
-:root {{
-  --ink:      #0B0F14;
-  --ink-2:    #1A2230;
-  --ink-3:    #2B3544;
-  --paper:    #FFFFFF;
-  --paper-2:  #F6F4F0;
-  --paper-3:  #EDEAE3;
-  --red:      #E4022D;
-  --red-soft: #FCE5EA;
-  --rule:     #D6D1C8;
-  --muted:    #5B6573;
-  --serif:    'Newsreader', Georgia, serif;
-  --sans:     'DM Sans', system-ui, sans-serif;
-  --radius:   3px;
-}}
+/* Real page margins (not div padding) so every printed page — not just the
+   first — gets consistent top/bottom space; div padding only applies once,
+   at the very start/end of the flowed content. */
+@page {{ size: A4; margin: 18mm 16mm; }}
 
 html, body {{
   background: var(--paper);
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 9.5pt;
   line-height: 1.55;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }}
 
-a {{ color: var(--ink-2); text-decoration: none; }}
+a {{ color: var(--ink); text-decoration: none; }}
 a:hover {{ text-decoration: underline; }}
 
-.overview-block {{
-  margin-bottom: 20px;
-  padding: 16px 20px;
-  background: var(--paper-2);
-  border-left: 3px solid var(--red);
-  border-radius: 0 var(--radius) var(--radius) 0;
+.wrap {{ padding: 32px 16px 48px; }}
+.card {{ max-width: 820px; width: 100%; margin: 0 auto; background: var(--card); padding: 40px; }}
+
+.wordmark {{
+  font-size: 13px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink);
+}}
+.wordmark-rule {{ margin-top: 6px; padding-top: 22px; border-bottom: 2px solid var(--red); }}
+
+.eyebrow {{
+  margin-top: 24px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--muted);
 }}
 
 .proj-name {{
-  font-family: var(--serif);
-  font-size: 15pt;
-  font-weight: 400;
-  color: var(--ink);
-  margin-bottom: 4px;
+  margin-top: 4px; margin-bottom: 32px;
+  font-family: var(--serif); font-size: 32px; font-style: italic; font-weight: 400;
+  color: var(--ink); line-height: 1.2;
 }}
+
+.sec-label {{
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
+}}
+
+.section-block {{ margin-bottom: 32px; }}
+.section-header {{ margin-bottom: 20px; }}
+.section-body {{ font-size: 13px; line-height: 1.6; color: var(--ink); }}
 
 .proj-desc {{
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+  margin-bottom: 20px;
 }}
 
-.su-body {{ font-size: 9.5pt; color: var(--ink-2); line-height: 1.6; margin: 0; }}
-
-.section-block {{
-  margin-top: 28px;
-  page-break-inside: avoid;
-}}
-
-.section-block:first-of-type {{ margin-top: 4px; }}
-
-.section {{
-  margin-bottom: 4px;
-}}
-
-.section-header {{
-  margin-bottom: 10px;
-}}
-
-.section-title {{
-  font-family: var(--serif);
-  font-size: 14pt;
-  font-weight: 400;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-  line-height: 1.2;
-}}
-
-.three-col-stats {{
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 0;
-}}
-
-.stat-card {{
-  background: var(--paper-2);
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  border-top: 2px solid var(--rule);
-}}
-
-.stat-card.accent {{ border-top-color: var(--red); }}
-
-.stat-card .s-n {{
-  font-family: var(--serif);
-  font-size: 20pt;
-  font-weight: 300;
-  color: var(--ink);
-  line-height: 1;
-}}
-
-.stat-card .s-l {{
-  font-size: 7.5pt;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-top: 3px;
-}}
-
-table {{
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 8.5pt;
-  table-layout: fixed;
-}}
-
-col.col-num {{ width: 44px; }}
-col.col-ttl {{ width: auto; }}
-col.col-st  {{ width: 100px; }}
-col.col-dt  {{ width: 72px; }}
-
-thead tr {{
-  border-bottom: 1.5px solid var(--ink);
-}}
-
-thead th {{
-  font-family: var(--sans);
-  font-size: 7pt;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding: 4px 8px 6px;
-  text-align: left;
-}}
-
-tbody tr {{
-  border-bottom: 1px solid var(--rule);
-}}
-
-tbody tr:last-child {{ border-bottom: none; }}
-
-tbody td {{
-  padding: 6px 8px;
-  vertical-align: top;
-  color: var(--ink-2);
-}}
-
-tbody tr:nth-child(even) {{ background: var(--paper-2); }}
-
-td.num {{
-  font-size: 8pt;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-}}
-
-td.num a {{
-  font-weight: 500;
-  color: var(--red-ink, #8A021B);
-}}
-
-td.ttl {{
-  font-size: 8.5pt;
-  color: var(--ink);
-  overflow-wrap: break-word;
-}}
-
-td.st {{
-  vertical-align: middle;
-}}
-
-td.dt {{
-  font-size: 7.5pt;
-  color: var(--muted);
-  white-space: nowrap;
-}}
-
-td.empty {{
-  color: var(--muted);
-  font-style: italic;
-  padding: 10px 8px;
-}}
-
-tr.more-row td {{
-  padding: 6px 8px;
-  font-size: 8pt;
-  color: var(--muted);
-  border-top: 1px dashed var(--rule);
-}}
-
-tr.more-row a {{
-  color: var(--red);
-  font-weight: 500;
-}}
-
-.chip {{
+.status-pill {{
   display: inline-block;
-  font-size: 7pt;
-  font-weight: 500;
-  padding: 2px 7px;
-  border-radius: 10px;
-  line-height: 1.4;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 3px 10px; border: 1px solid; border-radius: 2px;
+}}
+
+.su-body p {{ margin: 4px 0; }}
+.su-body h1, .su-body h2, .su-body h3, .su-body h4, .su-body h5, .su-body h6 {{
+  font-size: 13px; font-weight: 700; color: var(--ink); margin: 8px 0 2px;
+}}
+.su-body ul, .su-body ol {{ margin: 4px 0; padding-left: 18px; }}
+.su-body li {{ margin: 3px 0; }}
+.su-body code {{
+  font-family: var(--mono); font-size: 12px; background: var(--rule-2);
+  padding: 1px 4px; border-radius: 2px;
+}}
+
+.three-col-stats {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }}
+.stat-card {{ background: var(--card); padding: 14px 16px; }}
+.stat-card .s-n {{ font-family: var(--serif); font-style: italic; font-size: 26px; color: var(--ink); line-height: 1; }}
+.stat-card .s-l {{ font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }}
+
+table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+
+col.col-num {{ width: 60px; }}
+col.col-ttl {{ width: auto; }}
+col.col-st  {{ width: 120px; }}
+col.col-dt  {{ width: 84px; }}
+
+thead tr {{ border-bottom: 2px solid var(--ink); }}
+thead th {{
+  font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ink); padding: 0 8px 8px 0; text-align: left;
+}}
+
+tbody tr {{ border-bottom: 1px solid var(--rule); }}
+tbody tr:last-child {{ border-bottom: none; }}
+tbody td {{ padding: 10px 8px 10px 0; vertical-align: top; font-size: 13px; color: var(--ink); }}
+
+td.num {{ font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }}
+td.num a {{ color: var(--muted); }}
+td.ttl {{ overflow-wrap: break-word; line-height: 1.5; }}
+td.st  {{ vertical-align: middle; }}
+td.dt  {{ font-size: 12px; color: var(--muted); white-space: nowrap; }}
+
+td.empty {{ color: var(--muted); font-style: italic; padding: 10px 0; }}
+
+tr.more-row td {{ padding: 10px 0; font-size: 12px; color: var(--muted); border-top: 1px dashed var(--rule); }}
+tr.more-row a {{ color: var(--red); font-weight: 600; }}
+
+.status-badge {{
+  display: inline-block; font-size: 11px; font-weight: 600; color: var(--ink);
+  background: var(--rule-2); border-radius: 2px; padding: 2px 8px; letter-spacing: 0.04em;
   white-space: nowrap;
 }}
 
 .label-chip {{
-  display: inline-block;
-  font-size: 6.5pt;
-  font-weight: 500;
-  padding: 1px 5px;
-  border-radius: 3px;
-  margin-right: 3px;
-  margin-top: 3px;
+  display: inline-block; font-size: 10px; font-weight: 500; padding: 1px 6px;
+  border-radius: 2px; margin-right: 4px; margin-top: 4px; background: var(--rule-2); color: var(--muted);
 }}
 
-.chips {{ margin-top: 3px; }}
+.chips {{ margin-top: 4px; }}
 
-.extra-block {{
-  margin-top: 12px;
-  background: var(--paper-2);
-  border-left: 3px solid var(--ink-3);
-  padding: 10px 14px;
-  border-radius: 0 var(--radius) var(--radius) 0;
-}}
-
-.extra-label {{
-  font-size: 7pt;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 6px;
-}}
-
-.extra-list {{
-  padding-left: 14px;
-  font-size: 9pt;
-  color: var(--ink-2);
-  line-height: 1.7;
-}}
+.extra-list {{ padding-left: 18px; font-size: 13px; color: var(--ink); line-height: 1.7; }}
 
 .notes-area {{
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  padding: 12px 16px;
-  color: var(--ink-2);
-  font-size: 9pt;
-  line-height: 1.6;
+  border: 1px solid var(--rule); border-radius: 2px; padding: 14px 16px;
+  color: var(--ink); font-size: 13px; line-height: 1.6;
 }}
 
-.muted {{ color: var(--muted); font-style: italic; }}
+.footer {{ border-top: 1px solid var(--ink); padding-top: 16px; margin-top: 8px; }}
+.footer-left  {{ font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); }}
+.footer-right {{ font-size: 12px; color: var(--muted); text-align: right; }}
 
-@media screen {{
-  body {{
-    max-width: 860px;
-    margin: 32px auto;
-    padding: 0 32px 48px;
-  }}
+/* Must come last: at equal specificity the later rule wins, and print needs to
+   override the screen .wrap/.card padding above with the @page margin instead. */
+@media print {{
+  html, body {{ background: var(--card); }}
+  thead {{ display: table-header-group; }}
+  tr {{ break-inside: avoid; }}
+  .section-block {{ page-break-inside: avoid; }}
+  .wrap {{ padding: 0; }}
+  .card {{ padding: 0; max-width: none; }}
 }}
 </style>
 </head>
 <body>
+<div class="wrap">
+  <div class="card">
 
-  <div class="section-header" style="margin-top:0">
-    <h2 class="section-title">{today_str} — Overview</h2>
+    <div>
+      <div class="wordmark">KILOWOTT</div>
+      <div class="wordmark-rule"></div>
+    </div>
+
+    <p class="eyebrow">WEEKLY STATUS &middot; {today_str.upper()}</p>
+    <h1 class="proj-name">{proj_title}</h1>
+
+    {section_html}
+
+    <div class="footer">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="footer-left">{proj_title}</td>
+          <td align="right" class="footer-right">{today_str} &nbsp;&middot;&nbsp; Generated by Kilowott</td>
+        </tr>
+      </table>
+    </div>
+
   </div>
-  {overview_html}
-
-  {questions_section}
-
-  <div class="section-block">
-    <div class="section-header">
-      <h2 class="section-title">Closed This Week</h2>
-    </div>
-    <div class="section">
-      {issue_table(closed_week, project_url, show_status=False,
-                   date_field=closed_date1, date_field2=closed_date2)}
-    </div>
-  </div>
-
-  <div class="section-block">
-    <div class="section-header">
-      <h2 class="section-title">In Progress &amp; To Be Tested</h2>
-    </div>
-    <div class="section">
-      {issue_table(active, project_url, date_field=active_date1)}
-    </div>
-  </div>
-
-  <div class="section-block">
-    <div class="section-header">
-      <h2 class="section-title">Next 10 Tasks</h2>
-    </div>
-    <div class="section">
-      {issue_table(next_10, project_url, date_field=next_date1)}
-    </div>
-  </div>
-
-  {notes_section}
-
+</div>
 </body>
 </html>"""
 
@@ -985,6 +1075,14 @@ def main():
                         help="Project status body text; overrides GitHub status body")
     parser.add_argument("--check-status", action="store_true",
                         help="Check if a GitHub project status exists, then exit")
+    parser.add_argument("--list-statuses", action="store_true",
+                        help="Print the project's Status field options (one per line), then exit")
+    parser.add_argument("--closed-statuses",   metavar="LIST",
+                        help="Comma-separated Status option names for the 'Closed This Week' section")
+    parser.add_argument("--progress-statuses", metavar="LIST",
+                        help="Comma-separated Status option names for the 'In Progress' section")
+    parser.add_argument("--next-statuses",     metavar="LIST",
+                        help="Comma-separated Status option names for the 'Next Tasks' section")
     args = parser.parse_args()
 
     owner_type, login, number = parse_project_url(args.project_url)
@@ -996,6 +1094,23 @@ def main():
         else:
             print("STATUS_NOT_FOUND")
         return
+
+    if args.list_statuses:
+        for name in fetch_status_options(owner_type, login, number):
+            print(name)
+        return
+
+    missing = [flag for flag, val in [
+        ("--closed-statuses", args.closed_statuses),
+        ("--progress-statuses", args.progress_statuses),
+        ("--next-statuses", args.next_statuses),
+    ] if not val]
+    if missing:
+        parser.error(f"{', '.join(missing)} required (use --list-statuses to see available options)")
+
+    closed_statuses   = {s.strip() for s in args.closed_statuses.split(",") if s.strip()}
+    progress_statuses = {s.strip() for s in args.progress_statuses.split(",") if s.strip()}
+    next_statuses     = {s.strip() for s in args.next_statuses.split(",") if s.strip()}
 
     output_dir = Path(args.output_dir) if args.output_dir else Path.cwd() / "reports"
     date_str   = datetime.now().strftime("%Y-%m-%d")
@@ -1009,17 +1124,20 @@ def main():
     print(f"  → {len(raw_items)} items fetched", flush=True)
 
     items = [p for p in (parse_item(r) for r in raw_items) if p]
-    closed_week, active, next_tasks = build_sections(items)
+    closed_week, active, next_tasks = build_sections(items, closed_statuses, progress_statuses, next_statuses)
 
     print("Generating report…", flush=True)
 
     if args.format == "csv":
         paths = export_csv(closed_week, active, next_tasks, output_dir, date_str)
+        status_path = export_status_csv(status_update, output_dir, date_str)
+        paths.append(status_path)
         print(f"\n✓ {len(paths)} CSV files saved to: {output_dir}", flush=True)
 
     else:
         html = generate_html(
             raw_items, proj_title, proj_desc, status_update, args.project_url,
+            closed_statuses, progress_statuses, next_statuses,
             manual_status_label=args.status,
             manual_status_body=args.status_body,
             extra_questions=args.questions,
