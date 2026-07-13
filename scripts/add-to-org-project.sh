@@ -41,24 +41,35 @@ fi
 
 echo "Project ID: $PROJECT_ID"
 
-# Add all issues from each repo
+add_item() {
+  local REPO="$1" KIND="$2" NUMBER="$3" API_PATH="$4"
+  NODE_ID=$(gh api "$API_PATH" --jq '.node_id')
+  if [ -z "$NODE_ID" ] || [ "$NODE_ID" = "null" ]; then
+    echo "  Skipping $KIND #$NUMBER — could not resolve node ID."
+    return
+  fi
+  RESULT=$(gh api graphql -f query='
+    mutation($project: ID!, $item: ID!) {
+      addProjectV2ItemById(input: {projectId: $project, contentId: $item}) {
+        item { id }
+      }
+    }' -f project="$PROJECT_ID" -f item="$NODE_ID" \
+    --jq '.data.addProjectV2ItemById.item.id')
+  echo "  Added $KIND #$NUMBER (item: $RESULT)"
+}
+
+# Add all issues and PRs from each repo
 for REPO in "${REPOS[@]}"; do
   echo "Adding issues from $REPO..."
   gh issue list --repo "$OWNER/$REPO" --state all --limit 1000 --json number --jq '.[].number' | while read ISSUE_NUMBER; do
-    NODE_ID=$(gh api /repos/$OWNER/$REPO/issues/$ISSUE_NUMBER --jq '.node_id')
-    if [ -z "$NODE_ID" ] || [ "$NODE_ID" = "null" ]; then
-      echo "  Skipping issue #$ISSUE_NUMBER — could not resolve node ID."
-      continue
-    fi
-    RESULT=$(gh api graphql -f query='
-      mutation($project: ID!, $item: ID!) {
-        addProjectV2ItemById(input: {projectId: $project, contentId: $item}) {
-          item { id }
-        }
-      }' -f project="$PROJECT_ID" -f item="$NODE_ID" \
-      --jq '.data.addProjectV2ItemById.item.id')
-    echo "  Added issue #$ISSUE_NUMBER (item: $RESULT)"
+    add_item "$REPO" "issue" "$ISSUE_NUMBER" "/repos/$OWNER/$REPO/issues/$ISSUE_NUMBER"
   done
+
+  echo "Adding pull requests from $REPO..."
+  gh pr list --repo "$OWNER/$REPO" --state all --limit 1000 --json number --jq '.[].number' | while read PR_NUMBER; do
+    add_item "$REPO" "PR" "$PR_NUMBER" "/repos/$OWNER/$REPO/pulls/$PR_NUMBER"
+  done
+
   echo "Done with $REPO."
 done
 
