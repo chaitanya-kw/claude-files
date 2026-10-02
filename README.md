@@ -20,6 +20,9 @@ Each file or tool has its own README.
 | `weekly-status-report` | `claude/skills/weekly-status-report/` | Generate a weekly status report for any GitHub Project V2 |
 | `snm-tnm-monthly-report-generator` | `claude/skills/snm-tnm-monthly-report-generator/` | Generate a branded Kilowott monthly S&M/T&M client report as a self-contained HTML file |
 | `project-instructions-creator` | `claude/skills/project-instructions-creator/` | Create Claude Project instructions for a new engagement |
+| `project-snapshot` | `claude/skills/project-snapshot/` | Export active Zoho project metadata to a CSV in Google Drive |
+| `actuals-snapshot` | `claude/skills/actuals-snapshot/` | Export per-person allocated hours from Zoho to a CSV in Google Drive |
+| `meeting-action-items` | `claude/skills/meeting-action-items/` | Turn a meeting transcript into Asana tasks in your Inbox |
 
 ---
 
