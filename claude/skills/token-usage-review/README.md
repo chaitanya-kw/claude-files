@@ -9,7 +9,7 @@ A Claude Code skill that analyses token usage from Claude Code session files, co
 Copy the skill folder into your Claude Code skills directory:
 
 ```bash
-cp -r dashboard/token-usage-review_skill/ ~/.claude/skills/token-usage-review/
+cp -r claude/skills/token-usage-review/ ~/.claude/skills/token-usage-review/
 ```
 
 No third-party dependencies. Requires Python 3.8+.
@@ -39,10 +39,10 @@ Claude Code will:
 
 ### Scope behaviour
 
-| Scope   | Sessions scanned                   | Reports read/written                  |
-| ------- | ---------------------------------- | ------------------------------------- |
-| Global  | `~/.claude/projects` (all)         | `~/.claude/token-usage-reviews/`      |
-| Project | `~/.claude/projects/<encoded-cwd>` | `<cwd>/.claude/token-usage-reviews/`  |
+| Scope   | Sessions scanned                   | Reports read/written |
+| ------- | ---------------------------------- | -------------------- |
+| Global  | `~/.claude/projects` (all)         | `~/.claude/`         |
+| Project | `~/.claude/projects/<encoded-cwd>` | `<cwd>/.claude/`     |
 
 ### Workflow change prompt
 
@@ -55,7 +55,7 @@ If either part is missing or ambiguous, the workflow attribution section is skip
 
 ### Output
 
-A timestamped markdown file is written to the scope's `token-usage-reviews/` directory (inside `.claude/`):
+A timestamped markdown file is written to the scope's `.claude/` directory:
 
 ```
 YYYY_MM_DD_HHMM-token-usage-review.md
@@ -91,7 +91,7 @@ Additional flags and practices that reduce token usage:
 | `YYYY_MM_DD_HHMM-claude-token-report.json` | `REPORTS_DIR` | Raw session data from the scanner |
 | `YYYY_MM_DD_HHMM-token-usage-review.md`    | `REPORTS_DIR` | Human-readable analysis report    |
 
-`REPORTS_DIR` is `~/.claude/token-usage-reviews/` for global scope, `<cwd>/.claude/token-usage-reviews/` for project scope. The folder is created automatically if it does not exist.
+`REPORTS_DIR` is `~/.claude/` for global scope, `<cwd>/.claude/` for project scope. The folder is created automatically if it does not exist.
 
 ---
 

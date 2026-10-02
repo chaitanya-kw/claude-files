@@ -29,11 +29,11 @@ Ask the user before doing anything else:
 
 Set variables based on answer:
 
-| Variable        | Global                                | Project                                          |
-| --------------- | ------------------------------------- | ------------------------------------------------ |
-| `SESSIONS_ROOT` | `~/.claude/projects`                  | `~/.claude/projects/<encoded-cwd>`               |
-| `REPORTS_DIR`   | `~/.claude/token-usage-reviews/`      | `<cwd>/.claude/token-usage-reviews/`             |
-| `SCOPE_LABEL`   | `global`                              | `project`                                        |
+| Variable        | Global               | Project                            |
+| --------------- | -------------------- | ---------------------------------- |
+| `SESSIONS_ROOT` | `~/.claude/projects` | `~/.claude/projects/<encoded-cwd>` |
+| `REPORTS_DIR`   | `~/.claude/`         | `<cwd>/.claude/`                   |
+| `SCOPE_LABEL`   | `global`             | `project`                          |
 
 For project scope, the encoded project path uses Claude Code's convention: replace `/` with `-` in the absolute path, strip leading `-`. If the encoded directory does not exist under `~/.claude/projects/`, inform the user that no sessions were found for this project and stop.
 
