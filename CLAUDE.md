@@ -2,12 +2,13 @@
 
 ## Project
 
-Personal collection of Claude Code skills, Gemini CLI custom commands, shell scripts, and workflow documentation for LLM-assisted development. The repo serves as a portable toolkit: skills are installed to `~/.claude/skills/` (global) or `.claude/skills/` (project-local); Gemini CLI commands are distributed as TOML files; scripts are one-shot automations for GitHub project management and telemetry setup.
+Personal collection of Claude Code skills, Gemini CLI custom commands, a Google Sheets Apps Script, shell scripts, and workflow documentation for LLM-assisted development. The repo serves as a portable toolkit: skills are installed to `~/.claude/skills/` (global) or `.claude/skills/` (project-local); Gemini CLI commands are distributed as TOML files; scripts are one-shot automations for GitHub project management and telemetry setup.
 
 ## Stack
 
 - Shell (bash/zsh) — scripts and skill entry points
 - Python — `claude/skills/token-usage-review/claude_token_report.py`
+- Google Apps Script — `sheets/planning-sheet/allocation_sync.gs` (pasted into a Google Sheet by hand)
 - Markdown — skill bodies (`SKILL.md`), documentation
 - TOML — Gemini CLI custom commands
 - OpenTelemetry — telemetry exporter to your team's OTEL collector (set via `OTEL_ENDPOINT`; see `scripts/setup-telemetry.sh`)
@@ -21,6 +22,7 @@ dashboard/         Shareable skills and Gemini CLI TOML commands for project tea
   <name>/SKILL.md      Claude Code skill body
   <name>/<name>.toml   Gemini CLI custom command
 docs/              Workflow reference documentation
+sheets/            Google Apps Scripts (paste into the sheet's Extensions → Apps Script)
 scripts/           One-shot shell scripts (telemetry setup, GitHub project management)
 ```
 
@@ -62,6 +64,6 @@ cp dashboard/<name>/SKILL.md .claude/skills/<name>/
 - package_manager: none
 - test_runner: none
 - lint_cmd: none
-- src_dirs: claude/skills, dashboard, docs, scripts
+- src_dirs: claude/skills, dashboard, docs, scripts, sheets
 - exclude_dirs: .git
 - docstring_style: none

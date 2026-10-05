@@ -17,7 +17,7 @@ Usage:
 people.csv as a JSON list of {zpuid, name, email} and writes nothing.
 
 --month defaults to the current calendar month.
-Run from the repo root. The last line printed is the CSV path.
+Run from the workspace folder. The last line printed is the CSV path.
 """
 
 import argparse
@@ -26,9 +26,9 @@ import glob
 import html
 import json
 import os
-import subprocess
+import sys
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 
 # ── constants ─────────────────────────────────────────────────────────────────
@@ -36,7 +36,8 @@ from datetime import date
 PARTIAL  = "tmp/actuals_partial.ndjson"
 PEOPLE   = "people.csv"
 OUT_DIR  = "tmp"  # transient; Drive holds the exports
-EXCLUDE  = {"0", "282451000000055461"}
+EXCLUDE  = {"0", "282451000000055461"}  # unassigned placeholder owners (same for every PM: one portal)
+IST      = timezone(timedelta(hours=5, minutes=30))  # fixed offset: no DST, no tzdata needed on Windows
 
 PEOPLE_FIELDS = ["person_name", "person_zpuid", "person_email", "team"]
 
@@ -153,7 +154,7 @@ def extract_tasks(data):
 
 
 def load_tasks_from_file(path):
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return slim(extract_tasks(json.load(f)))
 
 
@@ -166,7 +167,7 @@ def record_tasks(rec):
 
 
 def iter_partial():
-    with open(PARTIAL) as f:
+    with open(PARTIAL, encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 yield json.loads(line)
@@ -195,7 +196,7 @@ def unknown_people(people, month_start, month_end):
 
 
 def read_people():
-    with open(PEOPLE) as f:
+    with open(PEOPLE, encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
     for row in rows:
         row.setdefault("person_email", "")
@@ -205,8 +206,8 @@ def read_people():
 
 
 def write_people(rows):
-    with open(PEOPLE, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=PEOPLE_FIELDS, extrasaction="ignore")
+    with open(PEOPLE, "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=PEOPLE_FIELDS, extrasaction="ignore", lineterminator="\n")
         w.writeheader()
         w.writerows(rows)
 
@@ -214,6 +215,9 @@ def write_people(rows):
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")  # Windows pipes default to cp1252
+
     parser = argparse.ArgumentParser(description="Aggregate Zoho allocated hours for a given month.")
     parser.add_argument(
         "--month",
@@ -355,9 +359,7 @@ def main():
 
     # Write outputs
     os.makedirs(OUT_DIR, exist_ok=True)
-    ts = subprocess.check_output(
-        ["bash", "-c", "TZ='Asia/Kolkata' date '+%Y_%m_%d_%H%M'"]
-    ).decode().strip()
+    ts = datetime.now(IST).strftime("%Y_%m_%d_%H%M")
 
     csv_path  = os.path.join(OUT_DIR, f"{ts}_allocations.csv")
 
@@ -365,7 +367,7 @@ def main():
         "project_id", "project_name", "person_name", "person_zpuid",
         "person_email", "allocated_hours", "export_month",
     ]
-    with open(csv_path, "w", newline="") as f:
+    with open(csv_path, "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
         w.writeheader()
         w.writerows(rows)

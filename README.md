@@ -26,6 +26,14 @@ Each file or tool has its own README.
 
 ---
 
+## Google Sheets scripts
+
+| Script | Location | Description |
+| ------ | -------- | ----------- |
+| `planning-sheet` | `sheets/planning-sheet/` | Apps Script for the capacity planning sheet: syncs the snapshot CSVs and timesheets from Drive into an allocation and what-if grid |
+
+---
+
 ## Installation
 
 ### Claude Code skills (personal — available in all projects)

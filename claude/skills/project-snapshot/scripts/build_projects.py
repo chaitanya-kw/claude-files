@@ -9,7 +9,7 @@ Usage:
 
 RESPONSE_FILE is a get_projects_list response saved by Claude Code (or written
 out by hand): the bare API body, or MCP content wrapping it as text. Pass one
-file per page. Run from the repo root; reads config.json for pm_filter.
+file per page. Run from the workspace folder; reads config.json for pm_filter.
 The last line printed is the CSV path.
 """
 
@@ -19,15 +19,16 @@ import html
 import json
 import os
 import re
-import subprocess
+import sys
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
 CONFIG = "config.json"
 OUT_DIR = "tmp"  # transient; Drive holds the exports
+IST = timezone(timedelta(hours=5, minutes=30))  # fixed offset: no DST, no tzdata needed on Windows
 ACTIVE_STATUSES = {"In Progress", "UAT", "Warranty", "On Hold"}
 COMPLETED_STATUSES = {"complete", "completed"}  # always excluded, whatever else matches
 
@@ -174,13 +175,16 @@ def row(p, month_start, month_end):
     }
 
 
-def ist(fmt_args):
-    return subprocess.check_output(["bash", "-c", f"TZ='Asia/Kolkata' date {fmt_args}"]).decode().strip()
+def ist_stamp():
+    return datetime.now(IST).strftime("%Y_%m_%d_%H%M")
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")  # Windows pipes default to cp1252
+
     parser = argparse.ArgumentParser(description="Build the projects CSV from saved list responses.")
     parser.add_argument("--month", metavar="YYYY-MM", required=True, help="Target month")
     parser.add_argument("files", nargs="+", help="Saved get_projects_list response file(s), one per page")
@@ -190,7 +194,10 @@ def main():
     month_start = date(year, mon, 1)
     month_end = date(year, mon, monthrange(year, mon)[1])
 
-    with open(CONFIG) as f:
+    if not os.path.exists(CONFIG):
+        print(f"ERROR: {CONFIG} not found in {os.getcwd()}. Run the skill's setup step first.")
+        raise SystemExit(1)
+    with open(CONFIG, encoding="utf-8") as f:
         pm_filter = json.load(f).get("pm_filter") or []
     if not pm_filter:
         print(f"ERROR: {CONFIG} has no pm_filter names.")
@@ -198,7 +205,7 @@ def main():
 
     projects = {}
     for path in args.files:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             for p in extract_projects(json.load(f)):
                 projects[str(p.get("id"))] = p  # pages can overlap; keep one per id
     if not projects:
@@ -220,10 +227,10 @@ def main():
     rows = sorted((row(p, month_start, month_end) for p in kept), key=lambda r: r["project_name"])
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    ts = ist("'+%Y_%m_%d_%H%M'")
+    ts = ist_stamp()
     csv_path = os.path.join(OUT_DIR, f"{ts}_projects.csv")
 
-    with open(csv_path, "w", newline="") as f:
+    with open(csv_path, "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=COLUMNS, lineterminator="\n")
         w.writeheader()
         w.writerows(rows)

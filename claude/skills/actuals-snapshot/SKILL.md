@@ -1,5 +1,5 @@
 ---
-description: Export per-person allocated hours from Zoho Projects. Builds the project list from one get_projects_list call, reads people.csv, flags unknown people for resolution, then builds YYYY_MM_DD_HHMM_allocations.csv in tmp/, uploads it to Google Drive and deletes the local copy. Logged hours are not exported — they come from the weekly timesheet xlsx read by the planning sheet. Records MCP responses in a tmp file as they arrive so a compacted or interrupted run can resume.
+description: Export per-person allocated hours from Zoho Projects. Requires the project-snapshot skill installed alongside it; on first run in a folder, sets up config.json, people.csv and the Google Drive folders. Builds the project list from one get_projects_list call, reads people.csv, flags unknown people for resolution, then builds YYYY_MM_DD_HHMM_allocations.csv in tmp/, uploads it to Google Drive and deletes the local copy. Logged hours are not exported — they come from the weekly timesheet xlsx read by the planning sheet. Records MCP responses in a tmp file as they arrive so a compacted or interrupted run can resume.
 ---
 
 # Zoho Allocations Snapshot Export
@@ -27,10 +27,34 @@ If no argument is supplied, default to the **current calendar month** using the 
 - Portal ID: `60037513197`
 - MCP tool prefix: `mcp__claude_ai_Zoho_Projects__`
 - Batch size for parallel task fetches: 5 projects at a time
-- Unassigned owner zpuids to exclude: `0`, `282451000000055461`
+- Unassigned owner zpuids to exclude: `0`, `282451000000055461` — the portal's placeholder for "no owner". The portal is shared by every PM, so these never change
 - Partial run file: `tmp/actuals_partial.ndjson`
-- Config: `config.json` in the repo root — `drive.allocations_folder_id` is the upload target
-- Processing script: `scripts/process_actuals.py` in this skill directory
+- Workspace: the current directory, holding `config.json`, `people.csv` and `tmp/`. `drive.allocations_folder_id` in `config.json` is the upload target. Created by Step 0 if missing
+- Processing script: `<skill_dir>/scripts/process_actuals.py`
+- Counterpart skill (required): `project-snapshot`, installed as a sibling folder. Its scripts are used from `<ps_dir>` = `<skill_dir>/../project-snapshot`: `build_projects.py` (project list) and `workspace.py` (preflight, setup, cleanup)
+
+`<skill_dir>` is this skill's base directory, shown when the skill loads. Write every path with forward slashes — they work on Windows too.
+
+---
+
+## Step 0 — Preflight and setup
+
+Run this on every invocation.
+
+### 0a — Find Python
+
+Run `python3 --version`. If that fails or prints nothing, try `python --version`, then `py -3 --version`. Use the first that reports Python 3.8 or later as `<py>` for every command in this run. If none works, stop and tell the user to install Python 3 and make it available on PATH.
+
+### 0b — Check the counterpart skill and workspace
+
+```bash
+<py> <ps_dir>/scripts/workspace.py check
+```
+
+- The command fails because the file does not exist → **stop**: `/actuals-snapshot needs the project-snapshot skill installed next to it, in the same skills folder: expected <ps_dir>. Install both skills side by side (e.g. ~/.claude/skills/project-snapshot and ~/.claude/skills/actuals-snapshot) and run again.`
+- `skills.project-snapshot.missing_scripts` or `skills.actuals-snapshot.missing_scripts` non-empty → stop: that skill's install is incomplete; reinstall it.
+- `ready` is `true` → continue to Step 1.
+- Otherwise → run setup: read `<ps_dir>/SKILL.md`, follow its **Step 0c — Setup** exactly (with `<skill_dir>` there meaning `<ps_dir>`), then continue to Step 1. That step also creates `people.csv` (header only) when it is missing; the first run will then list every task owner as unknown in Step 6.
 
 ---
 
@@ -54,7 +78,7 @@ Projects CSVs are no longer kept in the repo, so build the list the same way `/p
 2. Build the CSV into `tmp/` with the project-snapshot script:
 
 ```bash
-mkdir -p tmp && python3 ~/.claude/skills/project-snapshot/scripts/build_projects.py --month <target_month> <page1_path> [<page2_path> ...]
+<py> <ps_dir>/scripts/build_projects.py --month <target_month> <page1_path> [<page2_path> ...]
 ```
 
 The last printed line is the CSV path (`tmp/YYYY_MM_DD_HHMM_projects.csv`). Parse it. Extract per row:
@@ -106,9 +130,7 @@ Proceed to Step 5.
 
 ## Step 4b — Full fetch
 
-Create `tmp/` folder if it does not exist.
-
-Create (or overwrite) `tmp/actuals_partial.ndjson` as an empty file before fetching begins.
+Create (or overwrite) `tmp/actuals_partial.ndjson` as an empty file before fetching begins (`tmp/` already exists from Step 2).
 
 For each project in `projectList[]`, call `mcp__claude_ai_Zoho_Projects__get_tasks_by_project`:
 
@@ -144,7 +166,7 @@ After each project's fetch completes (all pages), immediately append **one line*
 {"project_id": "...", "project_name": "...", "fetched_at": "<IST ISO datetime>", "pages_fetched": 1, "tasks_files": ["<saved path>"]}
 ```
 
-With several pages, list every page's saved path in `tasks_files`.
+With several pages, list every page's saved path in `tasks_files`. Write paths with forward slashes (`C:/Users/...` on Windows) — a raw backslash breaks the JSON line.
 
 **Response returned inline:** write a slim record containing only these fields per task — nothing else:
 
@@ -170,10 +192,10 @@ Print when all fetches complete: `All task data fetched. Checking people...`
 
 ## Step 5 — Find unknown people
 
-Run from the repo root:
+Run from the workspace:
 
 ```bash
-python3 <skill_dir>/scripts/process_actuals.py --month <target_month> --check-people
+<py> <skill_dir>/scripts/process_actuals.py --month <target_month> --check-people
 ```
 
 It prints a JSON list of `{zpuid, name, email}` for owners of in-month tasks whose zpuid is not in `people.csv`. It reads saved response files itself, so the task data never needs to come through the conversation.
@@ -201,6 +223,9 @@ For each person, reply with:
 
 Reply in the format:
   <zpuid>: team|other|skip
+or, for everyone listed at once:
+  all: team|other|skip
+(an "all" reply can be followed by per-person lines that override it)
 ```
 
 Wait for the user's response. Do not proceed until all unknowns are resolved.
@@ -220,10 +245,10 @@ Print: `people.csv resolved. Processing allocations...`
 ## Step 7 — Process allocations
 
 ```bash
-python3 <skill_dir>/scripts/process_actuals.py --month <target_month> [--skip <zpuid>,<zpuid>]
+<py> <skill_dir>/scripts/process_actuals.py --month <target_month> [--skip <zpuid>,<zpuid>]
 ```
 
-Run from the repo root. The script:
+Run from the workspace. The script:
 
 - reads `tmp/actuals_partial.ndjson` (inline tasks and saved response files) and `people.csv`;
 - keeps tasks overlapping the month (undated tasks count as active);
@@ -298,7 +323,7 @@ If the upload fails, report it and **do not** delete `tmp/`: the CSV there is th
 Then delete the partial file and the `tmp/` folder:
 
 ```bash
-rm -rf tmp/
+<py> <ps_dir>/scripts/workspace.py clean --all
 ```
 
 ---
@@ -326,9 +351,9 @@ Drive:  <viewUrl of the uploaded file, or "upload failed">
 
 - Project list call or `build_projects.py` fails → print error, stop. Do not delete partial file.
 - Projects CSV missing `project_id` or `project_name` → print error, stop. Do not delete partial file.
-- `people.csv` not found → print error, stop. Do not delete partial file.
+- `people.csv` not found → handled by Step 0 setup. If it is still missing at Step 5, print error, stop. Do not delete partial file.
 - `people.csv` missing required columns (`person_name`, `person_zpuid`, `team`) → print error, stop. A missing `person_email` column is added by the script.
-- `config.json` missing or without `drive.allocations_folder_id` → skip the upload, say so in the summary.
+- `config.json` missing or incomplete → handled by Step 0 setup; never guess names or folder IDs.
 - Task fetch fails after one retry → write a record with `"tasks": []` and `"fetch_failed": true`. Flag in summary.
 - Filter rejected with HTTP 400 → print the error. Do not fall back to an unfiltered fetch without asking: unfiltered responses are roughly 15× larger.
 - Any stop due to error → leave `tmp/actuals_partial.ndjson` in place so the run can be resumed once the issue is resolved.

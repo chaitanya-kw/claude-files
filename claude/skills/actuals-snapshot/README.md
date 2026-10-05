@@ -13,14 +13,16 @@ cp -r claude/skills/actuals-snapshot ~/.claude/skills/
 cp -r claude/skills/project-snapshot ~/.claude/skills/   # required: its build script supplies the project list
 ```
 
+Both skills must sit side by side in the same skills folder: this skill runs `project-snapshot`'s `build_projects.py` and `workspace.py` via `../project-snapshot`.
+
 Requires:
 
 - Zoho Projects MCP connector
 - Google Drive MCP connector
-- Python 3.8+ (stdlib only) for `scripts/process_actuals.py`
-- In the repo you run it from:
+- Python 3.8+ (stdlib only; `python3`, `python` or `py -3` — Windows, macOS and Linux)
+- In the folder you run it from (created by first-run setup if missing — see [`project-snapshot`](../project-snapshot/README.md)):
   - `config.json` with `pm_filter` and `drive.allocations_folder_id`
-  - `people.csv` with columns `person_name`, `person_zpuid`, `person_email`, `team`
+  - `people.csv` with columns `person_name`, `person_zpuid`, `person_email`, `team`. A new `people.csv` is header-only, so the first run lists every task owner as unknown
 
 ---
 
@@ -34,12 +36,13 @@ Requires:
 
 Claude Code will:
 
-1. Build the project list with the same call and filters as `/project-snapshot`
-2. Fetch tasks overlapping the month (plus open undated tasks) for each project, 5 projects at a time
-3. Record each project's response in `tmp/actuals_partial.ndjson` as it arrives, so an interrupted or compacted run can resume
-4. List task owners not yet in `people.csv` and ask you to mark each as `team`, `other` or `skip`
-5. Run `process_actuals.py` to share each task's `total_work` among its owners and total the hours per person per project
-6. Upload `YYYY_MM_DD_HHMM_allocations.csv` to Drive, delete `tmp/`, and print a summary
+1. Check the install and workspace, running first-time setup if needed
+2. Build the project list with the same call and filters as `/project-snapshot`
+3. Fetch tasks overlapping the month (plus open undated tasks) for each project, 5 projects at a time
+4. Record each project's response in `tmp/actuals_partial.ndjson` as it arrives, so an interrupted or compacted run can resume
+5. List task owners not yet in `people.csv` and ask you to mark each as `team`, `other` or `skip` (or `all: <choice>` for everyone)
+6. Run `process_actuals.py` to share each task's `total_work` among its owners and total the hours per person per project
+7. Upload `YYYY_MM_DD_HHMM_allocations.csv` to Drive, delete `tmp/`, and print a summary
 
 ---
 
@@ -48,6 +51,6 @@ Claude Code will:
 | File                               | Location                       | Description                                  |
 | ---------------------------------- | ------------------------------ | -------------------------------------------- |
 | `YYYY_MM_DD_HHMM_allocations.csv`  | Drive `allocations_folder_id`  | One row per project × person, allocated hrs  |
-| `people.csv`                       | Repo root                      | New people appended, missing emails filled in |
+| `people.csv`                       | Workspace                      | New people appended, missing emails filled in |
 
 If the upload fails or the run stops on an error, `tmp/` is kept so the run can be retried or resumed.
