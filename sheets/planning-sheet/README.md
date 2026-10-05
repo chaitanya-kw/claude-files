@@ -91,7 +91,8 @@ Total capacity, total budget (active projects), capacity − budget, team alloca
 
 - Each xlsx is read once. The script converts it to a temporary Google Sheet, reads it, then trashes the copy.
 - Required columns: `Date` (DD-MM-YYYY), `Project ID`, `Log User Mailid`, `User`, `Hours(For Calculation)`. `Approval Status` is optional; entries containing "reject" are ignored.
-- Files are combined by date, not by name: when two files cover the same day, that day comes from the most recent export (from the xlsx metadata, else the Drive upload time).
+- Files are combined by date, not by name. Each file is month-to-date: it covers the 1st of the month of its earliest date through its latest date, so the first Monday file of a month holds the whole previous month.
+- Within a file's coverage, the most recent export wins (from the xlsx metadata, else the Drive upload time). This includes days it has no entries for: entries an earlier export had for those days are cleared.
 - Logged hours are matched to projects by `Project ID` → `project_key` on Projects import, and to people by email (People first, then Allocations import, else the timesheet's user name).
 - To make Sync re-read a file, delete its row on `_timesheet_files`.
 

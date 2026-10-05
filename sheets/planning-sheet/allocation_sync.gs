@@ -34,10 +34,12 @@
  *
  * HOW TIMESHEETS ARE COMBINED
  *   Each xlsx is read once; its entries are kept in the hidden "_timesheet_log" tab.
- *   Files are identified by their contents, not their names: if two files contain
- *   the same day, that day's entries come from the file exported most recently
- *   (export time from the xlsx metadata, else its Drive upload time). Entries with an
- *   approval status containing "reject" are ignored. "_timesheet_files" lists every
+ *   Files are identified by their contents, not their names. Each file is month-to-date:
+ *   it covers the 1st of the month of its earliest date through its latest date (the
+ *   first Monday file of a month holds the whole previous month). Within that range the
+ *   file exported most recently wins (export time from the xlsx metadata, else its Drive
+ *   upload time), including days it has no entries for, which are cleared. Entries with
+ *   an approval status containing "reject" are ignored. "_timesheet_files" lists every
  *   file read and the dates it covered; delete a row there to make Sync re-read that file.
  *
  * IMPORT REQUIREMENT (only when pasting CSVs by hand)
@@ -607,7 +609,7 @@ function hiddenTab_(ss, name, headers) {
 
 /**
  * Reads timesheet xlsx files not yet listed on _timesheet_files and merges them
- * into _timesheet_log. Per day, entries from the most recently exported file win.
+ * into _timesheet_log. Per day in a file's coverage, the most recently exported file wins.
  */
 function ingestTimesheets_(ss, folderId) {
   const filesSh = hiddenTab_(ss, CONFIG.TS_FILES_SHEET, TS_FILES_HEADERS);
@@ -636,26 +638,38 @@ function ingestTimesheets_(ss, folderId) {
 
   const lines = [];
   fresh.forEach(file => {
-    const { entries, exportedAt, convertedDates } = readTimesheet_(file);
+    const { entries, exportedAt, convertedDates, firstDate, lastDate } = readTimesheet_(file);
     const days = new Map();
     entries.forEach(e => {
       if (!days.has(e.date)) days.set(e.date, []);
       days.get(e.date).push(e);
     });
-    const dates = [...days.keys()].sort();
-    let used = 0;
-    days.forEach((dayEntries, date) => {
+    // Files are month-to-date: the file covers the 1st of its first month through its
+    // last date, so days in that range it has no entries for are cleared too.
+    const from = firstDate ? `${firstDate.slice(0, 7)}-01` : '';
+    const covered = new Set(days.keys());
+    if (from) [...byDate.keys()].forEach(d => { if (d >= from && d <= lastDate) covered.add(d); });
+    let superseded = 0;
+    let cleared = 0;
+    covered.forEach(date => {
       const cur = byDate.get(date);
-      if (cur && cur.exportedAt > exportedAt) return; // a later export already covers this day
-      byDate.set(date, { fileId: file.getId(), exportedAt, entries: dayEntries });
-      used++;
+      if (cur && cur.exportedAt > exportedAt) { // a later export already covers this day
+        if (days.has(date)) superseded++;
+        return;
+      }
+      if (days.has(date)) {
+        byDate.set(date, { fileId: file.getId(), exportedAt, entries: days.get(date) });
+      } else {
+        byDate.delete(date);
+        cleared++;
+      }
     });
-    filesSh.appendRow([file.getId(), file.getName(), exportedAt, dates[0] || '', dates.at(-1) || '',
+    filesSh.appendRow([file.getId(), file.getName(), exportedAt, from, lastDate,
       entries.length, new Date().toISOString()]);
-    const range = dates.length ? `${dates[0]} → ${dates.at(-1)}` : 'no dated entries';
-    const superseded = dates.length - used;
+    const range = from ? `${from} → ${lastDate}` : 'no dated entries';
     lines.push(`Timesheet read: ${file.getName()} (${range}, ${entries.length} entries` +
-      (superseded ? `, ${superseded} day(s) already covered by a later export` : '') + ')');
+      (superseded ? `, ${superseded} day(s) already covered by a later export` : '') +
+      (cleared ? `, ${cleared} day(s) from an earlier export now empty and cleared` : '') + ')');
     if (convertedDates) {
       lines.push(`  Warning: ${convertedDates} date(s) in ${file.getName()} were stored as dates, not ` +
         'text, and may have day and month swapped. Check them against the file.');
@@ -688,12 +702,17 @@ function readTimesheet_(file) {
       if (!(TS_COLS[k] in idx)) throw new Error(`${file.getName()} has no "${TS_COLS[k]}" column.`);
     });
     let convertedDates = 0;
+    let firstDate = '';
+    let lastDate = '';
     const entries = [];
     values.slice(1).forEach(r => {
       const raw = r[idx[TS_COLS.date]];
       if (raw instanceof Date) convertedDates++;
       const date = timesheetDate_(raw);
       if (!date) return;
+      // Coverage counts rejected rows too, so a day whose entries were all rejected is cleared.
+      if (!firstDate || date < firstDate) firstDate = date;
+      if (date > lastDate) lastDate = date;
       if (TS_COLS.approval in idx && /reject/i.test(String(r[idx[TS_COLS.approval]]))) return;
       entries.push({
         date,
@@ -703,7 +722,7 @@ function readTimesheet_(file) {
         hours: Number(r[idx[TS_COLS.hours]]) || 0,
       });
     });
-    return { entries, exportedAt, convertedDates };
+    return { entries, exportedAt, convertedDates, firstDate, lastDate };
   } finally {
     DriveApp.getFileById(tmpId).setTrashed(true);
   }
