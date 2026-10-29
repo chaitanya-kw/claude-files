@@ -1,8 +1,25 @@
 ---
+name: weekly-status-report
 description: Generate a weekly status report for any GitHub Project V2.
 ---
 
 # Weekly Status Report
+
+Works in Claude Code and on claude.ai.
+
+## Environment
+
+- **Script path.** `<SKILL_DIR>` below is the folder holding this SKILL.md: `~/.claude/skills/weekly-status-report`
+  or `.claude/skills/weekly-status-report` in Claude Code, `/mnt/skills/user/weekly-status-report` on claude.ai.
+  If unsure, find it: `find / -path '*weekly-status-report/scripts/generate_weekly_report.py' 2>/dev/null | head -1`.
+- **GitHub access.** Claude Code uses the logged-in `gh` CLI. Without `gh` (claude.ai), the script reads `GH_TOKEN` or
+  `GITHUB_TOKEN` (scopes `repo`, `read:project`). If neither is available, ask the user for a token and pass it as
+  `GH_TOKEN=<token>` on the command, never echoing it back.
+- **Where files go.** claude.ai: `/mnt/user-data/outputs/`, then share them with `present_files`. Claude Code:
+  `<cwd>/reports/` (the script's default); if the working directory is the home folder or not a project, ask where
+  to save instead.
+- **PDF.** Needs Chrome/Chromium, or Playwright's Chromium (common on claude.ai). With neither, the script saves the HTML
+  and says so; offer the HTML instead.
 
 ## Steps
 
@@ -14,7 +31,7 @@ description: Generate a weekly status report for any GitHub Project V2.
 2. Fetch the project's actual Status field options:
 
 ```bash
-python3 "$HOME/.claude/skills/weekly-status-report/scripts/generate_weekly_report.py" \
+python3 "<SKILL_DIR>/scripts/generate_weekly_report.py" \
   --project-url "<URL>" \
   --list-statuses
 ```
@@ -36,6 +53,7 @@ python3 "$HOME/.claude/skills/weekly-status-report/scripts/generate_weekly_repor
        - Next Tasks: <comma-separated statuses>
        ```
    - If no `CLAUDE.md` file exists in the current working directory, just ask the three questions below — don't create a `CLAUDE.md` file.
+   - On claude.ai there's no `CLAUDE.md`: look for a `Weekly Report Status Grouping` in the Project instructions or the conversation, and validate it the same way. If there isn't one, ask the three questions and suggest the user adds the grouping to the Project instructions.
 
 > Here are this project's actual statuses: `<comma-separated list from step 2>`
 >
@@ -53,7 +71,7 @@ python3 "$HOME/.claude/skills/weekly-status-report/scripts/generate_weekly_repor
 5. **For PDF/HTML only** — check if a project status is available on GitHub:
 
 ```bash
-python3 "$HOME/.claude/skills/weekly-status-report/scripts/generate_weekly_report.py" \
+python3 "<SKILL_DIR>/scripts/generate_weekly_report.py" \
   --project-url "<URL>" \
   --check-status
 ```
@@ -70,10 +88,10 @@ python3 "$HOME/.claude/skills/weekly-status-report/scripts/generate_weekly_repor
 > 3. *(PDF/HTML only)* Any open questions for the client? *(One per line, or "none")*
 > 4. *(PDF/HTML only)* Any notes for the Notes section? *(Free text, or "none")*
 
-7. Determine the output location based on the current working directory:
-   - **PDF**: `<cwd>/reports/<slug>-weekly-YYYY-MM-DD.pdf`
-   - **HTML**: `<cwd>/reports/<slug>-weekly-YYYY-MM-DD.html`
-   - **CSV**: four files in `<cwd>/reports/` — `weekly-YYYY-MM-DD-closed-this-week.csv`, `weekly-YYYY-MM-DD-in-progress.csv`, `weekly-YYYY-MM-DD-next-tasks.csv`, `weekly-YYYY-MM-DD-status.csv`
+7. Determine the output location (`<out>` is the folder from **Where files go** above):
+   - **PDF**: `<out>/<slug>-weekly-YYYY-MM-DD.pdf`
+   - **HTML**: `<out>/<slug>-weekly-YYYY-MM-DD.html`
+   - **CSV**: four files in `<out>/` — `weekly-YYYY-MM-DD-closed-this-week.csv`, `weekly-YYYY-MM-DD-in-progress.csv`, `weekly-YYYY-MM-DD-next-tasks.csv`, `weekly-YYYY-MM-DD-status.csv`
 
    Where `<slug>` is the project title slugified (e.g. `prismatch-overview`). For CSV the slug is not needed since filenames are fixed.
 
@@ -87,10 +105,10 @@ python3 "$HOME/.claude/skills/weekly-status-report/scripts/generate_weekly_repor
 9. Only after confirmation, run the generator:
 
 ```bash
-python3 "$HOME/.claude/skills/weekly-status-report/scripts/generate_weekly_report.py" \
+python3 "<SKILL_DIR>/scripts/generate_weekly_report.py" \
   --project-url "<URL>" \
   --format <pdf|html|csv> \
-  --output-dir "<cwd>/reports" \
+  --output-dir "<out>" \
   --closed-statuses "<from step 3>" \
   --progress-statuses "<from step 3>" \
   --next-statuses "<from step 3>" \
@@ -104,10 +122,12 @@ python3 "$HOME/.claude/skills/weekly-status-report/scripts/generate_weekly_repor
    - Omit any other flag whose answer was "none" or blank.
    - For multi-line `--questions`, use `$'line1\nline2'` shell quoting.
 
-10. After the script finishes, tell the user the full path(s) to the generated file(s).
+10. After the script finishes, tell the user the full path(s) to the generated file(s). On claude.ai, also call
+    `present_files` with them.
 
 11. If the script fails, show the error and diagnose:
-    - Not authenticated: run `gh auth status` and ask user to run `gh auth login`.
+    - Not authenticated: in Claude Code, run `gh auth status` and ask the user to run `gh auth login`; on claude.ai,
+      ask for a token (see **GitHub access**).
     - Chrome PDF failure: an HTML file is saved alongside the expected PDF path — open that as a fallback.
 
 ## Report sections

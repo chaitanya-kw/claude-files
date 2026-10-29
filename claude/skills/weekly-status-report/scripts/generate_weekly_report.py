@@ -3,10 +3,14 @@
 
 import argparse
 import csv
+import os
+import shutil
 import subprocess
 import json
 import re
 import sys
+import urllib.request
+import zlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -173,11 +177,27 @@ def build_meta_query(owner_type, login, number):
 
 
 def gh_graphql(query, **variables):
-    cmd = ["gh", "api", "graphql", "-f", f"query={query}"]
-    for k, v in variables.items():
-        cmd += ["-f", f"{k}={v}"]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return json.loads(result.stdout)
+    # Claude Code: the authenticated gh CLI. claude.ai (no gh): a GH_TOKEN / GITHUB_TOKEN with read:project scope.
+    if shutil.which("gh"):
+        cmd = ["gh", "api", "graphql", "-f", f"query={query}"]
+        for k, v in variables.items():
+            cmd += ["-f", f"{k}={v}"]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return json.loads(result.stdout)
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        sys.exit("[ERROR] No gh CLI and no GH_TOKEN/GITHUB_TOKEN set. Install and log in to gh, "
+                 "or export a token with repo and read:project scopes.")
+    req = urllib.request.Request(
+        "https://api.github.com/graphql",
+        data=json.dumps({"query": query, "variables": variables}).encode(),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req) as resp:
+        data = json.loads(resp.read())
+    if data.get("errors") and not data.get("data"):
+        sys.exit(f"[ERROR] GitHub GraphQL: {data['errors']}")
+    return data
 
 
 def fetch_all_items(owner_type, login, number):
@@ -639,7 +659,8 @@ LABEL_PALETTE = [
 
 
 def label_color(name):
-    return LABEL_PALETTE[hash(name) % len(LABEL_PALETTE)]
+    # crc32, not hash(): Python randomises str hashes per process, which changed label colours on every run
+    return LABEL_PALETTE[zlib.crc32(name.encode()) % len(LABEL_PALETTE)]
 
 
 def status_chip(status):
@@ -1080,12 +1101,24 @@ def export_pdf(html_content, out_path):
     html_path.write_text(html_content, encoding="utf-8")
 
     chrome = next((c for c in [
-        "google-chrome", "google-chrome-stable", "chromium-browser", "chromium",
-    ] if subprocess.run(["which", c], capture_output=True).returncode == 0), None)
+        "google-chrome", "google-chrome-stable", "chromium-browser", "chromium", "chrome",
+    ] if shutil.which(c)), None)
 
     if not chrome:
-        print(f"[WARN] No Chrome found. HTML saved to: {html_path}", file=sys.stderr)
-        return html_path
+        # claude.ai sandboxes often have Playwright's Chromium instead of a Chrome binary
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch()
+                page = browser.new_page()
+                page.goto(html_path.resolve().as_uri())
+                page.pdf(path=str(out_path), prefer_css_page_size=True, print_background=True)
+                browser.close()
+            html_path.unlink(missing_ok=True)
+            return out_path
+        except Exception as e:
+            print(f"[WARN] No Chrome found ({e}). HTML saved to: {html_path}", file=sys.stderr)
+            return html_path
 
     result = subprocess.run([
         chrome,
@@ -1108,6 +1141,12 @@ def export_pdf(html_content, out_path):
 # Main
 # ---------------------------------------------------------------------------
 
+def default_output_dir():
+    # claude.ai only shows the user files saved under /mnt/user-data/outputs; Claude Code saves next to the project
+    claude_ai = Path("/mnt/user-data/outputs")
+    return claude_ai if claude_ai.is_dir() else Path.cwd() / "reports"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate a weekly status report for a GitHub Project V2")
     parser.add_argument("--project-url",  required=True, metavar="URL",
@@ -1115,7 +1154,7 @@ def main():
     parser.add_argument("--format",       choices=["pdf", "html", "csv"], default="pdf",
                         help="Output format (default: pdf)")
     parser.add_argument("--output-dir",   metavar="DIR",
-                        help="Directory to write output files (default: ./reports)")
+                        help="Directory to write output files (default: /mnt/user-data/outputs on claude.ai, else ./reports)")
     parser.add_argument("--questions",    metavar="TEXT",
                         help="Open questions for the client (one per line; PDF/HTML only)")
     parser.add_argument("--notes",        metavar="TEXT",
@@ -1163,7 +1202,7 @@ def main():
     progress_statuses = {s.strip() for s in args.progress_statuses.split(",") if s.strip()}
     next_statuses     = {s.strip() for s in args.next_statuses.split(",") if s.strip()}
 
-    output_dir = Path(args.output_dir) if args.output_dir else Path.cwd() / "reports"
+    output_dir = Path(args.output_dir) if args.output_dir else default_output_dir()
     date_str   = datetime.now().strftime("%Y-%m-%d")
 
     print("Fetching project metadata…", flush=True)

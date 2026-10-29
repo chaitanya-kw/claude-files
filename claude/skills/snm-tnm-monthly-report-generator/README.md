@@ -67,19 +67,33 @@ CSV (header row required, columns in any order), a Google Doc link, a screenshot
 
 ## Output
 
-A file named `YYYY_MM_DD_HHMM-monthly-report-<project-slug>.html`, timestamped in IST (UTC+5:30), saved to `/mnt/user-data/outputs/` and presented via `present_files`.
+A file named `YYYY_MM_DD_HHMM-monthly-report-<project-slug>.html`, timestamped in IST (UTC+5:30):
 
-Report sections (numbered sequentially, gaps closed if any are omitted): Summary, Blockers, Value Add, Support Overview, Maintenance Overview, Support & Maintenance Updates, Core Framework Updates (optional), Plugin & Package Updates (optional), one standalone section per qualifying scan category, Time & Machinery Updates (omitted if no T&M tasks), Footer.
+- **claude.ai**: saved to `/mnt/user-data/outputs/` and shared through `present_files`.
+- **Claude Code**: saved to `<cwd>/reports/`. Claude asks where to save instead if the working directory isn't a project.
+
+Open it in a browser to print to PDF, or select all, copy, and paste into a Gmail compose window. All layout styles are inline, so the paste keeps the layout.
+
+Report sections (numbered sequentially, gaps closed if any are omitted): Summary, Blockers, Value Add, Support Overview, Maintenance Overview, Support & Maintenance Updates, Core Framework Updates (optional), Plugin & Package Updates (optional), one standalone section per qualifying scan category, Time & Materials Updates (omitted if no T&M tasks), Footer.
 
 ## Install
 
+`SKILL.md` and `references/` in this folder are the source. `snm-tnm-monthly-report-generator.skill` is the same content zipped for claude.ai. Rebuild it after any change:
+
+```bash
+cd claude/skills && rm -f snm-tnm-monthly-report-generator/snm-tnm-monthly-report-generator.skill && \
+  zip -r -X snm-tnm-monthly-report-generator/snm-tnm-monthly-report-generator.skill \
+  snm-tnm-monthly-report-generator/SKILL.md snm-tnm-monthly-report-generator/references
+```
+
+**Claude Code**
+
 ```bash
 mkdir -p ~/.claude/skills/snm-tnm-monthly-report-generator
-# Unzip the .skill archive and copy SKILL.md
-unzip snm-tnm-monthly-report-generator.skill -d /tmp/skill_extracted/
-cp /tmp/skill_extracted/snm-tnm-monthly-report-generator/SKILL.md ~/.claude/skills/snm-tnm-monthly-report-generator/
-cp -r /tmp/skill_extracted/snm-tnm-monthly-report-generator/references ~/.claude/skills/snm-tnm-monthly-report-generator/
+cp -r claude/skills/snm-tnm-monthly-report-generator/{SKILL.md,references} ~/.claude/skills/snm-tnm-monthly-report-generator/
 ```
+
+**claude.ai**: upload `snm-tnm-monthly-report-generator.skill` under Settings → Capabilities → Skills (replace the existing version).
 
 ## References
 
