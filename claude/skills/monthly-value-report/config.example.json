@@ -1,0 +1,51 @@
+{
+  "client": "<Client>",
+  "title": "<Client> development",
+  "timezone": "Asia/Kolkata",
+  "output_dir": "monthly-reports",
+  "priorities_file": "PRIORITIES.md",
+  "github": {
+    "owner": "<org>",
+    "repos": [
+      "<repo>"
+    ],
+    "project": 0,
+    "parent_label": "parent",
+    "deploy_branches": {
+      "<repo>": "main"
+    }
+  },
+  "devs": [
+    {
+      "short": "<First name>",
+      "zoho": "<Zoho user name as in the timesheet>",
+      "github": "<github login>"
+    },
+    {
+      "short": "<PM first name>",
+      "zoho": "<Zoho user name>",
+      "fixed_epic": "Planning, coordination, reporting and management"
+    }
+  ],
+  "zoho": {
+    "projects": [
+      "NI-0000",
+      "NI-0001"
+    ],
+    "sm_projects": [
+      "NI-0001"
+    ],
+    "sm_label": "Support & maintenance (S&M)",
+    "timesheet_drive_folder": "<Drive folder id, optional>"
+  },
+  "epic_overrides": {
+    "<repo>#123": "<repo>#10"
+  },
+  "labels": {
+    "<repo>#10": "<client-friendly priority name>",
+    "Security incident response": "<label for a non-issue allocation epic>"
+  },
+  "holidays": [
+    "YYYY-MM-DD"
+  ]
+}

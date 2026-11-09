@@ -19,6 +19,7 @@ Each file or tool has its own README.
 | `token-usage-review` | `claude/skills/token-usage-review/` | Analyse Claude Code token usage from session files |
 | `weekly-status-report` | `claude/skills/weekly-status-report/` | Generate a weekly status report for any GitHub Project V2 |
 | `snm-tnm-monthly-report-generator` | `claude/skills/snm-tnm-monthly-report-generator/` | Generate a branded Kilowott monthly S&M/T&M client report as a self-contained HTML file |
+| `monthly-value-report` | `claude/skills/monthly-value-report/` | Monthly report v2: the value the dev team delivered in a month, from Zoho hours and GitHub, as PDF and/or Gmail HTML |
 | `project-instructions-creator` | `claude/skills/project-instructions-creator/` | Create Claude Project instructions for a new engagement |
 | `project-snapshot` | `claude/skills/project-snapshot/` | Export active Zoho project metadata to a CSV in Google Drive |
 | `actuals-snapshot` | `claude/skills/actuals-snapshot/` | Export per-person allocated hours from Zoho to a CSV in Google Drive |
