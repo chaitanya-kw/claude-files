@@ -90,7 +90,9 @@ can't be found in the folder (CLAUDE.md, a PRIORITIES file, existing weekly-repo
    Don't add a section explaining how the hours were placed.
    Show the draft **in the conversation**: don't write a PDF or HTML yet, not even a test build. Then **stop for
    approval**. Apply changes and show the draft again until the user approves.
-6b. **Adversarial review** after the user approves the draft, before any build. Take the role of a disputatious client
+6b. **Adversarial review**, **once per report**, after the user approves the draft and before the first build. Once
+   its points are settled, don't review the report again (later changes and rebuilds go straight through) unless
+   the user asks for another review. Take the role of a disputatious client
    trying to poke holes in the report, check each suspicion against the data, and list the biggest weak spots, ranked:
    - mismatches with reports already sent (weekly reports for the same days, earlier monthly reports);
    - headline counts that don't hold up (what's counted, reverts, bulk closures, test-only merges);
@@ -99,7 +101,8 @@ can't be found in the folder (CLAUDE.md, a PRIORITIES file, existing weekly-repo
    - overlaps between lines (e.g. S&M vs development maintenance) and sensitive items (incidents, disputes).
    For each: the client's likely challenge, our exposure, and a suggested fix. The user settles each point (fix,
    reword, or keep as is). Apply the decisions, show what changed, and only then ask which output: **PDF**,
-   **Gmail HTML**, or **both**. Don't build until every point is settled.
+   **Gmail HTML**, or **both**. Don't build until every point is settled. Record in `$W/review-done` that the
+   review happened, so a later session on the same month doesn't repeat it.
 7. **Build** once the review points are settled. Delete the previous outputs for the month first: `python3 $S/monthly_report.py $M $W <out.pdf> <out.html>` (the PDF is always built, in
    `$W` if only HTML was asked for, to check length). It prints `PAGES: n`. Render with
    `pdftoppm -r 60 -png <pdf> $W/page` and look at every page: no table split awkwardly, no orphaned headings.

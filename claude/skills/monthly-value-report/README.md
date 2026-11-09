@@ -21,7 +21,7 @@ Output is a PDF and/or Gmail-paste HTML in the Kilowott house style used by the 
 - Flags weekdays with no billable time (holidays from the config are skipped) and issues not under a priority
 - Shows the full draft in chat for approval before writing any file
 - Backs the main value claims with 2–3 numbers from the project's own data
-- After the draft is approved, runs an adversarial review (a disputatious client's view of the weak spots) and builds
+- After the draft is approved, runs one adversarial review per report (a disputatious client's view of the weak spots) and builds
   only once every point is settled
 - Leaves reverts out of the changes-shipped count
 
