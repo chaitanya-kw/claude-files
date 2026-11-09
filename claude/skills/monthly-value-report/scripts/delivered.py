@@ -28,6 +28,8 @@ def main():
         for p in cfg.gh_json(["pr", "list", "-R", f"{OWNER}/{r}", "--state", "merged", "--base", branch, "--limit", "500",
                               "--search", f"merged:{start}..{end}",
                               "--json", "number,title,body,mergedAt,author,url"]):
+            if p["title"].lower().startswith("revert"):  # a revert undoes a change, so it isn't a change shipped
+                continue
             # Issues named with a closing keyword in the body, else any #n in the title (same-repo references only)
             refs = re.findall(r"(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)", p["body"] or "") or re.findall(r"#(\d+)", p["title"])
             linked = list(dict.fromkeys(f"{r}#{n}" for n in refs if n != str(p["number"])))

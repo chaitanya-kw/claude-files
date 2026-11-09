@@ -76,6 +76,9 @@ can't be found in the folder (CLAUDE.md, a PRIORITIES file, existing weekly-repo
      `max_pages` (default 3).
    Keep the report to the month in question: what was done and delivered in it. No plans, next steps or upcoming
    work.
+   Back the main value claims with **2–3 hard numbers** from the project's own data (read-only queries through the
+   project's database tooling or skill, e.g. before/after rates around a fix). Use a like-for-like comparison, give the
+   period, and show each query and result to the user. Drop a number that doesn't clearly support the claim.
    Write for the client: plain language, no plugin/class/API names, no issue numbers, no customer personal data,
    no fault, apology or credit language. Verify any number you state (counts, dates) from the data.
 6. **Preview.** `python3 $S/monthly_report.py $M $W --preview`. Show the user, as bullets (not tables):
@@ -86,9 +89,18 @@ can't be found in the folder (CLAUDE.md, a PRIORITIES file, existing weekly-repo
      project's triage rules if it has them).
    Don't add a section explaining how the hours were placed.
    Show the draft **in the conversation**: don't write a PDF or HTML yet, not even a test build. Then **stop for
-   approval** and ask which output: **PDF**, **Gmail HTML**, or **both**. Apply changes and show the draft again until
-   the user approves.
-7. **Build** after approval: `python3 $S/monthly_report.py $M $W <out.pdf> <out.html>` (the PDF is always built, in
+   approval**. Apply changes and show the draft again until the user approves.
+6b. **Adversarial review** after the user approves the draft, before any build. Take the role of a disputatious client
+   trying to poke holes in the report, check each suspicion against the data, and list the biggest weak spots, ranked:
+   - mismatches with reports already sent (weekly reports for the same days, earlier monthly reports);
+   - headline counts that don't hold up (what's counted, reverts, bulk closures, test-only merges);
+   - rework presented as value, and claims that go beyond the records ("every", "all", unquantified "fewer");
+   - hours with thin evidence (blank notes, estimated splits, role lines, days over 8 h, totals not in the export);
+   - overlaps between lines (e.g. S&M vs development maintenance) and sensitive items (incidents, disputes).
+   For each: the client's likely challenge, our exposure, and a suggested fix. The user settles each point (fix,
+   reword, or keep as is). Apply the decisions, show what changed, and only then ask which output: **PDF**,
+   **Gmail HTML**, or **both**. Don't build until every point is settled.
+7. **Build** once the review points are settled. Delete the previous outputs for the month first: `python3 $S/monthly_report.py $M $W <out.pdf> <out.html>` (the PDF is always built, in
    `$W` if only HTML was asked for, to check length). It prints `PAGES: n`. Render with
    `pdftoppm -r 60 -png <pdf> $W/page` and look at every page: no table split awkwardly, no orphaned headings.
    If it runs over `max_pages`, suggest specific trims to the user rather than trimming yourself.
