@@ -7,7 +7,7 @@ import cfg
 C = cfg.load()
 OWNER = C["github"]["owner"]
 REPOS = C["github"]["repos"]
-DEVS = {d["github"]: d["short"] for d in C["devs"] if d.get("github")}
+DEVS = {g: d["short"] for d in C["devs"] for g in ([d["github"]] if d.get("github") else []) + d.get("github_aliases", [])}
 TZ = ZoneInfo(C["timezone"])  # the zone devs log in; Zoho dates use it too
 PROJECT = C["github"].get("project")
 MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}

@@ -19,7 +19,10 @@
     {
       "short": "<First name>",
       "zoho": "<Zoho user name as in the timesheet>",
-      "github": "<github login>"
+      "github": "<github login>",
+      "github_aliases": [
+        "<other github login of the same person, optional>"
+      ]
     },
     {
       "short": "<PM first name>",

@@ -20,7 +20,7 @@ Working files: `<output_dir>/<YYYY-MM>/.source/` (`W`), kept so the report can b
 
 If there's no `report.config.json`, copy `config.example.json` from the skill folder and fill it in with the user:
 GitHub owner, repos, project number and deploy branch per repo; people (short name, Zoho user name exactly as in the
-timesheet, and either a GitHub login or a `fixed_epic`: one report line that takes all their hours, for roles such as
+timesheet, and either a GitHub login (plus `github_aliases` if they post under more than one) or a `fixed_epic`: one report line that takes all their hours, for roles such as
 project management or senior oversight); Zoho project IDs for this client, with any support & maintenance projects
 also listed in `zoho.sm_projects` (plus `sm_label`); the priorities source
 (`priorities_file`, a markdown table with `[repo #n]` links, or else `github.parent_label`); `holidays` (dates the

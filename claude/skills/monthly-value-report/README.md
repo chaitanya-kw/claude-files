@@ -53,7 +53,7 @@ cp -r claude/skills/monthly-value-report ~/.claude/skills/
 ```
 
 Then, in each project folder, the first run creates `report.config.json` from `config.example.json` with you:
-GitHub owner, repos, project number and deploy branches; devs (short name, Zoho user name, GitHub login); Zoho
+GitHub owner, repos, project number and deploy branches; devs (short name, Zoho user name, GitHub login, optional `github_aliases` for extra logins); Zoho
 project IDs; the priorities source (a markdown file of `[repo #n]` links, or a parent label); holidays; and optional
 `epic_overrides` and `labels`.
 
