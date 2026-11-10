@@ -217,9 +217,8 @@ def main():
     trows = [[esc(pc.get(e, {}).get("title") or name(e))] + [f"{hours[e][d]:.1f}" if hours[e][d] >= 0.05 else "–" for d in DEVS]
              + [f"<b>{sum(hours[e].values()):.1f}</b>", f"{100 * sum(hours[e].values()) / total:.0f}%"] for e in order if sum(hours[e].values()) >= 0.05]
     foot = ["Total"] + [f"{acc[d]:.1f}" for d in DEVS] + [f"{total:.1f}", "100%"]
-    note = content.get("hours_note", "Hours are billable hours from the timesheet. Each hour is placed under a priority from the developers' task time logs and timesheet notes.")
-    sections.append(("Where the time went", kw.table(tcols, trows, foot)
-                     + f'<p style="margin:6px 0 0 0;font-family:{kw.SANS};font-size:10px;color:{kw.MUTED};">{esc(note)}</p>', True))
+    # No footnote on how hours were placed: that's internal and stays off the client report
+    sections.append(("Where the time went", kw.table(tcols, trows, foot), True))
     if smz:
         scols = [("Date", "left", "54px"), ("Task", "left", None), ("By", "left", "70px"), ("Effort (Hr)", "right", "76px")]
         srows = [[f"{dt.date.fromisoformat(t['date']):%d %b}", esc(t["task"]), esc(t["dev"]), f"{float(t['hours']):.1f}"] for t in sm_tasks]

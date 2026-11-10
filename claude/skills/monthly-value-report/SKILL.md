@@ -72,7 +72,7 @@ can't be found in the folder (CLAUDE.md, a PRIORITIES file, existing weekly-repo
      script stops and lists the S&M rows otherwise). Optional `sm_intro` (one sentence above the S&M table).
    - each `fixed_epic` line needs an entry under `priorities` too: what that role delivered in the month. Ask the user
      when the evidence doesn't show it.
-   - optional: `dev_title` (heading of the delivered section), `hours_note` (footnote under the hours table),
+   - optional: `dev_title` (heading of the delivered section),
      `max_pages` (default 3), `show_tasks_completed: false` (drops the closed-issue count, e.g. when a bulk board
      cleanup inflates it).
    Keep the report to the month in question: what was done and delivered in it. No plans, next steps or upcoming
@@ -114,6 +114,8 @@ can't be found in the folder (CLAUDE.md, a PRIORITIES file, existing weekly-repo
 
 - Hours basis is Zoho billable for everyone on the configured projects; S&M projects are reported in their own task
   table, apart from development. GitHub only says what the time was spent on.
+- How hours are placed on priorities (time logs, notes, estimated splits) is internal: never explain it in the report,
+  no footnote or section about it. The preview shows the user what was estimated.
 - Never add made-up hours. Estimated placement of real hours is fine if the preview shows it.
 - PDF and Gmail-paste HTML only (no .docx/.xlsx). Styling comes from `scripts/kw_report.py` (Kilowott house style,
   the same as the weekly reports). Everything is inline-styled so it survives a Gmail paste.
