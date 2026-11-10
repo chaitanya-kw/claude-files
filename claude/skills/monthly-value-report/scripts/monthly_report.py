@@ -178,7 +178,8 @@ def main():
             print(f"- {dev}: {len(miss)} days" + (f" ({', '.join(miss)})" if miss else ""))
         print(f"\n{label}: {total + smt:.1f} h in total · development {total:.1f} h · {sm_label} {smt:.1f} h")
         print(f"Development: {total:.1f} h · " + " · ".join(f"{d} {acc[d]:.1f} h" for d in DEVS)
-              + f" · {len(closed)} tasks completed · {len(prs)} changes shipped\n")
+              + (f" · {len(closed)} tasks completed" if content.get("show_tasks_completed", True) else "")
+              + f" · {len(prs)} changes shipped\n")
         print("Highlights:")
         for h in content.get("highlights", []):
             print(f"- {h}")
@@ -200,7 +201,9 @@ def main():
         return
 
     glance = [(f"{total + smt:.0f}", "Total hours"), (f"{total:.0f}", "Development")] + ([(f"{smt:.0f}", sm_label)] if smz else [])
-    sections = [("The month at a glance", kw.cards(glance + [(str(len(closed)), "Tasks completed"), (str(len(prs)), "Changes shipped")]))]
+    # content.json "show_tasks_completed": false drops the closed-issue count (e.g. when a bulk board cleanup inflates it)
+    tasks = [(str(len(closed)), "Tasks completed")] if content.get("show_tasks_completed", True) else []
+    sections = [("The month at a glance", kw.cards(glance + tasks + [(str(len(prs)), "Changes shipped")]))]
     if content.get("intro"):
         sections[0] = (sections[0][0], kw.para(content["intro"]) + '<div style="height:10px"></div>' + sections[0][1])
     if content.get("highlights"):

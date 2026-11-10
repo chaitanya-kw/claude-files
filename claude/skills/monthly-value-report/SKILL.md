@@ -73,7 +73,8 @@ can't be found in the folder (CLAUDE.md, a PRIORITIES file, existing weekly-repo
    - each `fixed_epic` line needs an entry under `priorities` too: what that role delivered in the month. Ask the user
      when the evidence doesn't show it.
    - optional: `dev_title` (heading of the delivered section), `hours_note` (footnote under the hours table),
-     `max_pages` (default 3).
+     `max_pages` (default 3), `show_tasks_completed: false` (drops the closed-issue count, e.g. when a bulk board
+     cleanup inflates it).
    Keep the report to the month in question: what was done and delivered in it. No plans, next steps or upcoming
    work.
    Back the main value claims with **2–3 hard numbers** from the project's own data (read-only queries through the
