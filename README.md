@@ -24,6 +24,7 @@ Each file or tool has its own README.
 | `project-snapshot` | `claude/skills/project-snapshot/` | Export active Zoho project metadata to a CSV in Google Drive |
 | `actuals-snapshot` | `claude/skills/actuals-snapshot/` | Export per-person allocated hours from Zoho to a CSV in Google Drive |
 | `meeting-action-items` | `claude/skills/meeting-action-items/` | Turn a meeting transcript into Asana tasks in your Inbox |
+| `timesheet-summary` | `claude/skills/timesheet-summary/` | Daily timesheet summaries (<500 chars) for a date range, from Google Calendar and Claude Code sessions |
 
 ---
 
